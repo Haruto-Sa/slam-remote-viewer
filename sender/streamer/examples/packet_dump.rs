@@ -37,8 +37,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             Err(zmq::Error::EAGAIN) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    "no telemetry received within 30 seconds; start the Mock
-                    Sender",
+                    "no telemetry received within 30 seconds; start the Mock Sender",
                 )
                 .into());
             }
