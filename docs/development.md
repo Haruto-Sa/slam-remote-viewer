@@ -60,20 +60,23 @@ An Issue is done when:
 - the diff has received a reviewer pass;
 - the branch is mergeable.
 
-## Planned Issues
+## Issues and backlog
 
 - #1 Define telemetry Protocol v1, including the coordinate-system contract.
-- #20 Implement a Rust Mock Sender for deterministic telemetry.
-- #30 Implement the ZeroMQ Receiver subscriber.
-- #31 Parse and validate Protocol v1.
-- #32 Normalize quaternions and preserve sign continuity.
-- #33 Convert `slam_world` coordinates to `unity_world`.
-- #40 Implement the Unity background subscriber and main-thread queue.
-- #41 Render camera pose and a camera frustum.
-- #43 Retain and render trajectory history.
-- #44 Apply and render point-cloud deltas.
-- #46 Record sessions and export the final point cloud as PLY.
-- #50 Connect the real SLAM adapter.
+- #4 Implement a Rust Mock Sender for deterministic telemetry.
+
+Future work receives its number when the GitHub Issue is created:
+
+- Implement the ZeroMQ Receiver subscriber.
+- Parse and validate Protocol v1.
+- Normalize quaternions and preserve sign continuity.
+- Convert `slam_world` coordinates to `unity_world`.
+- Implement the Unity background subscriber and main-thread queue.
+- Render camera pose and a camera frustum.
+- Retain and render trajectory history.
+- Apply and render point-cloud deltas.
+- Record sessions and export the final point cloud as PLY.
+- Connect the real SLAM adapter.
 
 Each Issue must leave the system runnable. Until the real SLAM adapter exists,
 the Mock Sender is the reference producer used by Receiver and Unity tests.
@@ -90,7 +93,7 @@ Acceptance criteria:
 - validation and sequence handling behavior is explicit.
 - examples parse as JSON.
 
-## Issue 20: Mock Sender
+## Issue 4: Mock Sender
 
 Goal: publish deterministic telemetry without a camera or SLAM installation.
 
@@ -100,7 +103,7 @@ Proposed behavior:
 - publish settings repeatedly;
 - publish a camera moving in a horizontal circle at a configurable rate;
 - periodically add point-cloud fixtures;
-- support a fixed random seed and optional finite duration;
+- use no random input and support an optional finite duration;
 - exit cleanly on Ctrl-C.
 
 Acceptance criteria:
@@ -113,7 +116,7 @@ Acceptance criteria:
 Suggested branch:
 
 ```text
-feature/20-mock-sender
+feature/4-mock-sender
 ```
 
 ## Local development order
