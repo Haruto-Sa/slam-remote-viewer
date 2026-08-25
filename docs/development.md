@@ -64,10 +64,10 @@ An Issue is done when:
 
 - #1 Define telemetry Protocol v1, including the coordinate-system contract.
 - #4 Implement a Rust Mock Sender for deterministic telemetry.
+- #7 Implement the Rust ZeroMQ telemetry subscriber.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Implement the ZeroMQ Receiver subscriber.
 - Parse and validate Protocol v1.
 - Normalize quaternions and preserve sign continuity.
 - Convert `slam_world` coordinates to `unity_world`.
@@ -117,6 +117,35 @@ Suggested branch:
 
 ```text
 feature/4-mock-sender
+```
+
+## Issue 7: Receiver subscriber
+
+Goal: receive Protocol v1 telemetry from the Mock Sender over ZeroMQ.
+
+Implemented behavior:
+
+- connect a configurable SUB socket, defaulting to
+  `tcp://127.0.0.1:5555`;
+- subscribe to the `slam/v1/` topic prefix;
+- receive topic and JSON payload as two multipart frames;
+- reject invalid frame counts, UTF-8, and JSON syntax without
+  panicking;
+- report received and rejected message counts;
+- exit cleanly on Ctrl-C.
+
+Acceptance criteria:
+
+- the Receiver observes settings, pose, and point-cloud topics from the Mock
+  Sender;
+- malformed multipart messages do not terminate the process;
+- the endpoint can be configured from the command line;
+- unit tests cover framing and encoding failures.
+
+Suggested branch:
+
+```text
+feature/7-receiver-subscriber
 ```
 
 ## Local development order
