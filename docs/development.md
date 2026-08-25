@@ -65,10 +65,10 @@ An Issue is done when:
 - #1 Define telemetry Protocol v1, including the coordinate-system contract.
 - #4 Implement a Rust Mock Sender for deterministic telemetry.
 - #7 Implement the Rust ZeroMQ telemetry subscriber.
+- #9 Parse and validate Protocol v1 telemetry.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Parse and validate Protocol v1.
 - Normalize quaternions and preserve sign continuity.
 - Convert `slam_world` coordinates to `unity_world`.
 - Implement the Unity background subscriber and main-thread queue.
@@ -146,6 +146,38 @@ Suggested branch:
 
 ```text
 feature/7-receiver-subscriber
+```
+
+## Issue 9: Protocol v1 parsing and validation
+
+Goal: deserialize received payloads into typed Protocol v1 messages and reject
+invalid telemetry before state handling or coordinate conversion.
+
+Implemented behavior:
+
+- deserialize settings, pose, and point-cloud payloads based on the exact
+  topic;
+- ignore unknown JSON fields for forward compatibility;
+- validate the protocol version, session, fixed settings values, timestamps,
+  numeric values, pose state, and point IDs;
+- reject payloads larger than 16 MiB before JSON parsing;
+- log accepted messages with topic, session, and sequence metadata instead of
+  the complete payload;
+- count and log invalid messages without terminating the Receiver.
+
+Acceptance criteria:
+
+- all three examples under `protocol/` deserialize and validate;
+- missing fields, wrong types, unsupported versions, and invalid values are
+  rejected;
+- unknown fields remain accepted;
+- the Mock Sender produces valid typed telemetry for all three topics;
+- automated tests and Clippy complete without warnings.
+
+Suggested branch:
+
+```text
+feature/9-protocol-validation
 ```
 
 ## Local development order

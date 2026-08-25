@@ -8,8 +8,9 @@ Each message must contain exactly two multipart frames:
 1. a UTF-8 topic;
 2. a UTF-8 JSON payload.
 
-The Receiver currently validates the transport framing, UTF-8 encoding, and
-JSON syntax. Protocol DTO parsing, coordinate conversion, and Unity
+The Receiver validates transport framing, payload size, UTF-8 encoding, JSON
+syntax, and Protocol v1 fields. Valid payloads are deserialized into typed
+settings, pose, and point-cloud messages. Coordinate conversion and Unity
 republishing are handled by later Issues.
 
 See [`../docs/protocol.md`](../docs/protocol.md) for the Protocol v1 contract.
@@ -72,6 +73,14 @@ The Receiver should report all three Protocol v1 topics. Settings and
 point-cloud messages are repeated by the Mock Sender so a late Subscriber can
 recover after the initial PUB/SUB connection delay.
 
+Valid messages are logged without printing the complete payload:
+
+```text
+received topic=slam/v1/settings session=receiver-test seq=-
+received topic=slam/v1/pose session=receiver-test seq=0
+received topic=slam/v1/pointcloud session=receiver-test seq=0
+```
+
 ## Validation behavior
 
 A received message is rejected without terminating the process when:
@@ -79,15 +88,23 @@ A received message is rejected without terminating the process when:
 - the multipart message does not contain exactly two frames;
 - the topic is not valid UTF-8;
 - the payload is not valid UTF-8;
-- the payload is not syntactically valid JSON.
+- the payload exceeds 16 MiB;
+- the topic is not a supported Protocol v1 topic;
+- the payload is not syntactically valid JSON;
+- a required field is missing or has the wrong type;
+- the protocol version, session, or fixed settings values are invalid;
+- a timestamp, position, quaternion, or point coordinate is invalid;
+- a point ID exceeds the JSON safe-integer limit.
+
+Unknown JSON fields are ignored for forward compatibility.
 
 Rejected messages are written to standard error and counted in the shutdown
-summary.
+summary. The complete payload is not included in validation-error logs.
 
 ## Known limitations
 
-- Payloads are not yet deserialized into Protocol v1 message types.
-- Protocol fields and values are not yet semantically validated.
 - Sequence gaps and session changes are not yet tracked.
+- Quaternion normalization and sign continuity are not yet implemented.
 - SLAM-to-Unity coordinate conversion is not yet implemented.
-- Valid payloads are logged in full, which is temporary diagnostic behavior.
+- Point-cloud deltas are not yet applied to persistent state.
+- Validated telemetry is not yet republished to Unity.
