@@ -1,6 +1,9 @@
+pub mod protocol;
+
 use std::fmt;
 
 pub const PROTOCOL_V1_TOPIC_PREFIX: &str = "slam/v1/";
+pub const MAX_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TelemetryPacket {
@@ -13,7 +16,7 @@ pub enum DecodeError {
     InvalidFrameCount { actual: usize },
     TopicNotUtf8,
     PayloadNotUtf8,
-    InvalidJson,
+    PayloadTooLarge { actual: usize, max: usize },
 }
 
 impl fmt::Display for DecodeError {
@@ -24,7 +27,12 @@ impl fmt::Display for DecodeError {
             }
             Self::TopicNotUtf8 => write!(formatter, "topic frame is not valid UTF-8"),
             Self::PayloadNotUtf8 => write!(formatter, "payload frame is not valid UTF-8"),
-            Self::InvalidJson => write!(formatter, "payload is not valid JSON"),
+            Self::PayloadTooLarge { actual, max } => {
+                write!(
+                    formatter,
+                    "payload contains {actual} bytes, maximum is {max}"
+                )
+            }
         }
     }
 }
@@ -37,9 +45,16 @@ pub fn decode_multipart(frames: &[Vec<u8>]) -> Result<TelemetryPacket, DecodeErr
             actual: frames.len(),
         });
     }
+
+    if frames[1].len() > MAX_PAYLOAD_BYTES {
+        return Err(DecodeError::PayloadTooLarge {
+            actual: frames[1].len(),
+            max: MAX_PAYLOAD_BYTES,
+        });
+    }
+
     let topic = std::str::from_utf8(&frames[0]).map_err(|_| DecodeError::TopicNotUtf8)?;
     let payload = std::str::from_utf8(&frames[1]).map_err(|_| DecodeError::PayloadNotUtf8)?;
-    serde_json::from_str::<serde_json::Value>(payload).map_err(|_| DecodeError::InvalidJson)?;
 
     Ok(TelemetryPacket {
         topic: topic.to_owned(),
@@ -105,10 +120,29 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_json() {
+    fn leaves_json_validation_to_protocol_parser() {
         let frames = vec![b"slam/v1/pose".to_vec(), b"{not-json}".to_vec()];
 
-        let error = decode_multipart(&frames).expect_err("invalid JSON should be rejected");
-        assert_eq!(error, DecodeError::InvalidJson);
+        let packet =
+            decode_multipart(&frames).expect("transport decoder should preserve the UTF-8 payload");
+
+        assert_eq!(packet.topic, "slam/v1/pose");
+        assert_eq!(packet.payload, "{not-json}");
+    }
+
+    #[test]
+    fn rejects_payload_larger_than_protocol_limit() {
+        let oversized_length = MAX_PAYLOAD_BYTES + 1;
+        let frames = vec![b"slam/v1/pose".to_vec(), vec![b' '; oversized_length]];
+
+        let error = decode_multipart(&frames).expect_err("oversized payload should be rejected");
+
+        assert_eq!(
+            error,
+            DecodeError::PayloadTooLarge {
+                actual: oversized_length,
+                max: MAX_PAYLOAD_BYTES,
+            }
+        );
     }
 }
