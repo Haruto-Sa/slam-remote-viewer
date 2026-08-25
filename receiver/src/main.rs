@@ -7,7 +7,10 @@ use std::{
 };
 
 use clap::Parser;
-use slam_receiver::{PROTOCOL_V1_TOPIC_PREFIX, decode_multipart};
+use slam_receiver::{
+    PROTOCOL_V1_TOPIC_PREFIX, decode_multipart,
+    protocol::{TelemetryMessage, parse_telemetry},
+};
 
 const DEFAULT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
 const RECEIVE_TIMEOUT_MS: i32 = 250;
@@ -65,10 +68,16 @@ fn run() -> Result<(), Box<dyn Error>> {
         };
 
         match decode_multipart(&frames) {
-            Ok(packet) => {
-                received_count += 1;
-                println!("received topic={} payload={}", packet.topic, packet.payload);
-            }
+            Ok(packet) => match parse_telemetry(&packet.topic, &packet.payload) {
+                Ok(message) => {
+                    received_count += 1;
+                    log_received(&message);
+                }
+                Err(error) => {
+                    rejected_count += 1;
+                    eprintln!("rejected telemetry: {error}");
+                }
+            },
             Err(error) => {
                 rejected_count += 1;
                 eprintln!("rejected multipart message: {error}");
@@ -76,12 +85,24 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!(
-        "receiver stopped: received={received_count},
-        rejected={rejected_count}"
-    );
+    println!("receiver stopped: received={received_count}, rejected={rejected_count}");
 
     Ok(())
+}
+
+fn log_received(message: &TelemetryMessage) {
+    match message.seq() {
+        Some(seq) => println!(
+            "received topic={} session={} seq={seq}",
+            message.topic(),
+            message.session()
+        ),
+        None => println!(
+            "received topic={} session={} seq=-",
+            message.topic(),
+            message.session()
+        ),
+    }
 }
 
 #[cfg(test)]
