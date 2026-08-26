@@ -10,6 +10,7 @@ use clap::Parser;
 use slam_receiver::{
     PROTOCOL_V1_TOPIC_PREFIX, decode_multipart,
     protocol::{TelemetryMessage, parse_telemetry},
+    quaternion::QuaternionContinuity,
 };
 
 const DEFAULT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
@@ -58,6 +59,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let mut received_count = 0_u64;
     let mut rejected_count = 0_u64;
+    let mut quaternion_continuity = QuaternionContinuity::new();
 
     while running.load(Ordering::SeqCst) {
         let frames = match subscriber.recv_multipart(0) {
@@ -69,7 +71,18 @@ fn run() -> Result<(), Box<dyn Error>> {
 
         match decode_multipart(&frames) {
             Ok(packet) => match parse_telemetry(&packet.topic, &packet.payload) {
-                Ok(message) => {
+                Ok(mut message) => {
+                    if let TelemetryMessage::Pose(pose) = &mut message
+                        && let Err(error) = quaternion_continuity.normalize_pose(pose)
+                    {
+                        rejected_count += 1;
+                        eprintln!(
+                            "rejected telemetry: topic=slam/v1/pose session={} seq={} reason={error}",
+                            pose.session, pose.seq
+                        );
+                        continue;
+                    }
+
                     received_count += 1;
                     log_received(&message);
                 }
