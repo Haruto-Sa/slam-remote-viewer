@@ -66,10 +66,10 @@ An Issue is done when:
 - #4 Implement a Rust Mock Sender for deterministic telemetry.
 - #7 Implement the Rust ZeroMQ telemetry subscriber.
 - #9 Parse and validate Protocol v1 telemetry.
+- #11 Normalize pose quaternions and preserve sign continuity.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Normalize quaternions and preserve sign continuity.
 - Convert `slam_world` coordinates to `unity_world`.
 - Implement the Unity background subscriber and main-thread queue.
 - Render camera pose and a camera frustum.
@@ -178,6 +178,37 @@ Suggested branch:
 
 ```text
 feature/9-protocol-validation
+```
+
+## Issue 11: Quaternion normalization and sign continuity
+
+Goal: produce stable unit pose quaternions before coordinate conversion and
+Unity visualization.
+
+Implemented behavior:
+
+- normalize Protocol v1 quaternions while preserving `[x, y, z, w]` order;
+- avoid overflow while normalizing large finite components;
+- reject non-finite, zero-length, and near-zero-length quaternions;
+- compare consecutive normalized quaternions and negate the current value when
+  their dot product is negative;
+- reset the previous-quaternion reference when the session changes;
+- reject quaternion-processing failures without terminating the Receiver.
+
+Acceptance criteria:
+
+- every accepted pose quaternion has unit length within the tested tolerance;
+- equivalent `q` and `-q` inputs produce sign-continuous output;
+- consecutive output quaternions have a non-negative dot product;
+- a session change clears the continuity reference;
+- invalid input does not replace the previous valid quaternion;
+- the Mock Sender remains compatible with the integrated Receiver;
+- automated tests and Clippy complete without warnings.
+
+Suggested branch:
+
+```text
+feature/11-quaternion-continuity
 ```
 
 ## Local development order

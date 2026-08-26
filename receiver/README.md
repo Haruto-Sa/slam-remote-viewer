@@ -10,7 +10,8 @@ Each message must contain exactly two multipart frames:
 
 The Receiver validates transport framing, payload size, UTF-8 encoding, JSON
 syntax, and Protocol v1 fields. Valid payloads are deserialized into typed
-settings, pose, and point-cloud messages. Coordinate conversion and Unity
+settings, pose, and point-cloud messages. Pose quaternions are normalized and
+made sign-continuous within each session. Coordinate conversion and Unity
 republishing are handled by later Issues.
 
 See [`../docs/protocol.md`](../docs/protocol.md) for the Protocol v1 contract.
@@ -94,6 +95,7 @@ A received message is rejected without terminating the process when:
 - a required field is missing or has the wrong type;
 - the protocol version, session, or fixed settings values are invalid;
 - a timestamp, position, quaternion, or point coordinate is invalid;
+- a quaternion has zero or near-zero norm;
 - a point ID exceeds the JSON safe-integer limit.
 
 Unknown JSON fields are ignored for forward compatibility.
@@ -101,10 +103,21 @@ Unknown JSON fields are ignored for forward compatibility.
 Rejected messages are written to standard error and counted in the shutdown
 summary. The complete payload is not included in validation-error logs.
 
+## Quaternion processing
+
+Pose quaternions retain Protocol v1 `[x, y, z, w]` component order. The
+Receiver normalizes each quaternion with an overflow-resistant calculation and
+rejects norms below `1e-12`.
+
+Because `q` and `-q` represent the same rotation, the Receiver compares each
+normalized quaternion with the previous accepted pose in the same session. If
+their dot product is negative, every component of the current quaternion is
+negated. The previous-quaternion reference is reset when the session changes.
+
 ## Known limitations
 
-- Sequence gaps and session changes are not yet tracked.
-- Quaternion normalization and sign continuity are not yet implemented.
+- Sequence gaps and duplicates are not yet tracked.
+- Complete session lifecycle and state clearing are not yet implemented.
 - SLAM-to-Unity coordinate conversion is not yet implemented.
 - Point-cloud deltas are not yet applied to persistent state.
 - Validated telemetry is not yet republished to Unity.
