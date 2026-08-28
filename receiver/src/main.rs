@@ -9,7 +9,7 @@ use std::{
 use clap::Parser;
 use slam_receiver::{
     PROTOCOL_V1_TOPIC_PREFIX,
-    coordinates::telemetry_to_unity,
+    coordinates::prepare_telemetry_for_unity,
     decode_multipart,
     protocol::{TelemetryMessage, parse_telemetry},
     quaternion::QuaternionContinuity,
@@ -74,9 +74,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         match decode_multipart(&frames) {
             Ok(packet) => match parse_telemetry(&packet.topic, &packet.payload) {
                 Ok(mut message) => {
-                    if let TelemetryMessage::Pose(pose) = &mut message
-                        && let Err(error) = quaternion_continuity.normalize_pose(pose)
+                    if let Err(error) =
+                        prepare_telemetry_for_unity(&mut message, &mut quaternion_continuity)
                     {
+                        let TelemetryMessage::Pose(pose) = &message else {
+                            unreachable!("only pose quaternion preparation can fail");
+                        };
                         rejected_count += 1;
                         eprintln!(
                             "rejected telemetry: topic=slam/v1/pose session={} seq={} reason={error}",
@@ -84,8 +87,6 @@ fn run() -> Result<(), Box<dyn Error>> {
                         );
                         continue;
                     }
-
-                    telemetry_to_unity(&mut message);
 
                     received_count += 1;
                     log_received(&message);

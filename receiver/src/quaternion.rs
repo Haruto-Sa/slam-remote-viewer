@@ -73,22 +73,26 @@ impl QuaternionContinuity {
         session: &str,
         quaternion: [f64; 4],
     ) -> Result<[f64; 4], QuaternionError> {
-        let mut normalized = normalize(quaternion)?;
+        let normalized = normalize(quaternion)?;
 
+        Ok(self.preserve_for_session(session, normalized))
+    }
+
+    pub fn preserve_for_session(&mut self, session: &str, mut quaternion: [f64; 4]) -> [f64; 4] {
         if self.session.as_deref() != Some(session) {
             self.session = Some(session.to_owned());
             self.previous = None;
         }
 
         if let Some(previous) = self.previous
-            && dot(previous, normalized) < 0.0
+            && dot(previous, quaternion) < 0.0
         {
-            normalized = normalized.map(|component| -component);
+            quaternion = quaternion.map(|component| -component);
         }
 
-        self.previous = Some(normalized);
+        self.previous = Some(quaternion);
 
-        Ok(normalized)
+        quaternion
     }
 
     pub fn normalize_pose(&mut self, pose: &mut PoseMessage) -> Result<(), QuaternionError> {
@@ -96,6 +100,10 @@ impl QuaternionContinuity {
         pose.q = normalized;
 
         Ok(())
+    }
+
+    pub fn preserve_pose(&mut self, pose: &mut PoseMessage) {
+        pose.q = self.preserve_for_session(&pose.session, pose.q);
     }
 }
 
@@ -255,5 +263,17 @@ mod tests {
             .expect("pose quaternion should normalize");
 
         assert_quaternion_close(pose.q, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn preserves_pose_continuity_without_normalizing_again() {
+        let mut tracker = QuaternionContinuity::new();
+        let mut pose: PoseMessage =
+            serde_json::from_str(POSE_EXAMPLE).expect("pose example should deserialize");
+        pose.q = [0.0, 0.0, 0.0, 2.0];
+
+        tracker.preserve_pose(&mut pose);
+
+        assert_eq!(pose.q, [0.0, 0.0, 0.0, 2.0]);
     }
 }

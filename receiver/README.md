@@ -10,10 +10,10 @@ Each message must contain exactly two multipart frames:
 
 The Receiver validates transport framing, payload size, UTF-8 encoding, JSON
 syntax, and Protocol v1 fields. Valid payloads are deserialized into typed
-settings, pose, and point-cloud messages. Pose quaternions are normalized and
-made sign-continuous within each session. Valid messages are then converted
-from the canonical SLAM frame into Unity coordinates. Unity republishing is
-handled by a later Issue.
+settings, pose, and point-cloud messages. Pose quaternions are normalized,
+converted from the canonical SLAM frame into Unity coordinates, and then made
+sign-continuous within each session. Unity republishing is handled by a later
+Issue.
 
 See [`../docs/protocol.md`](../docs/protocol.md) for the Protocol v1 contract.
 
@@ -110,15 +110,17 @@ Pose quaternions retain Protocol v1 `[x, y, z, w]` component order. The
 Receiver normalizes each quaternion with an overflow-resistant calculation and
 rejects norms below `1e-12`.
 
-Because `q` and `-q` represent the same rotation, the Receiver compares each
-normalized quaternion with the previous accepted pose in the same session. If
-their dot product is negative, every component of the current quaternion is
-negated. The previous-quaternion reference is reset when the session changes.
+Because `q` and `-q` represent the same rotation, after coordinate conversion
+the Receiver compares each normalized quaternion with the previous accepted
+pose in the same session. If their dot product is negative, every component of
+the current quaternion is negated. The previous-quaternion reference is reset
+when the session changes.
 
 ## Coordinate conversion
 
-After validation and quaternion processing, the Receiver applies the coordinate
-contract from [`../docs/coordinate-system.md`](../docs/coordinate-system.md):
+After validation and quaternion normalization, the Receiver applies the
+coordinate contract from
+[`../docs/coordinate-system.md`](../docs/coordinate-system.md):
 
 - pose positions `[x, y, z]` become `[x, -y, z]`;
 - pose quaternions `[x, y, z, w]` become `[-x, y, -z, w]`;

@@ -1,4 +1,5 @@
 use crate::protocol::{PointEntry, TelemetryMessage};
+use crate::quaternion::{QuaternionContinuity, QuaternionError, normalize};
 
 pub const UNITY_WORLD_FRAME: &str = "unity_world";
 
@@ -40,6 +41,23 @@ pub fn telemetry_to_unity(message: &mut TelemetryMessage) {
                 .for_each(|point| *point = point_entry_to_unity(*point));
         }
     }
+}
+
+pub fn prepare_telemetry_for_unity(
+    message: &mut TelemetryMessage,
+    quaternion_continuity: &mut QuaternionContinuity,
+) -> Result<(), QuaternionError> {
+    if let TelemetryMessage::Pose(pose) = message {
+        pose.q = normalize(pose.q)?;
+    }
+
+    telemetry_to_unity(message);
+
+    if let TelemetryMessage::Pose(pose) = message {
+        quaternion_continuity.preserve_pose(pose);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -201,5 +219,116 @@ mod tests {
         assert_eq!(pointcloud.update, vec![(1002, -4.0, -5.0, 6.0)]);
         assert_eq!(pointcloud.remove, vec![1003]);
         assert_eq!(pointcloud.seq, 7);
+    }
+
+    #[test]
+    fn prepares_pose_in_required_quaternion_order() {
+        let mut continuity = QuaternionContinuity::new();
+        let mut message = TelemetryMessage::Pose(PoseMessage {
+            v: 1,
+            session: "session-1".to_owned(),
+            seq: 1,
+            t: 1.0,
+            p: [1.0, 2.0, 3.0],
+            q: [0.2, 0.4, 0.6, 0.8],
+            state: PoseState::Tracking,
+        });
+
+        prepare_telemetry_for_unity(&mut message, &mut continuity)
+            .expect("pose quaternion should be prepared");
+
+        let TelemetryMessage::Pose(pose) = message else {
+            panic!("pose message should remain a pose");
+        };
+        let expected =
+            normalize([-0.2, 0.4, -0.6, 0.8]).expect("expected quaternion should normalize");
+        assert_quaternion_close(pose.q, expected);
+        assert_eq!(pose.p, [1.0, -2.0, 3.0]);
+    }
+
+    #[test]
+    fn preserves_sign_continuity_after_unity_conversion() {
+        let mut continuity = QuaternionContinuity::new();
+        let mut first = TelemetryMessage::Pose(PoseMessage {
+            v: 1,
+            session: "session-1".to_owned(),
+            seq: 1,
+            t: 1.0,
+            p: [0.0, 0.0, 0.0],
+            q: [0.2, 0.4, 0.6, 0.8],
+            state: PoseState::Tracking,
+        });
+        let mut second = TelemetryMessage::Pose(PoseMessage {
+            v: 1,
+            session: "session-1".to_owned(),
+            seq: 2,
+            t: 2.0,
+            p: [0.0, 0.0, 0.0],
+            q: [-0.3, -0.6, -0.9, -1.2],
+            state: PoseState::Tracking,
+        });
+
+        prepare_telemetry_for_unity(&mut first, &mut continuity)
+            .expect("first pose should be prepared");
+        prepare_telemetry_for_unity(&mut second, &mut continuity)
+            .expect("second pose should be prepared");
+
+        let (TelemetryMessage::Pose(first), TelemetryMessage::Pose(second)) = (first, second)
+        else {
+            panic!("messages should remain poses");
+        };
+        assert_quaternion_close(second.q, first.q);
+    }
+
+    #[test]
+    fn rejects_invalid_quaternion_before_conversion_or_continuity_update() {
+        let mut continuity = QuaternionContinuity::new();
+        let mut first = TelemetryMessage::Pose(PoseMessage {
+            v: 1,
+            session: "session-1".to_owned(),
+            seq: 1,
+            t: 1.0,
+            p: [0.0, 0.0, 0.0],
+            q: [0.0, 0.0, 0.0, 1.0],
+            state: PoseState::Tracking,
+        });
+        prepare_telemetry_for_unity(&mut first, &mut continuity)
+            .expect("first pose should be prepared");
+
+        let mut invalid = TelemetryMessage::Pose(PoseMessage {
+            v: 1,
+            session: "session-1".to_owned(),
+            seq: 2,
+            t: 2.0,
+            p: [1.0, 2.0, 3.0],
+            q: [0.0, 0.0, 0.0, 0.0],
+            state: PoseState::Tracking,
+        });
+        assert_eq!(
+            prepare_telemetry_for_unity(&mut invalid, &mut continuity),
+            Err(QuaternionError::NormTooSmall)
+        );
+
+        let TelemetryMessage::Pose(invalid) = invalid else {
+            panic!("message should remain a pose");
+        };
+        assert_eq!(invalid.p, [1.0, 2.0, 3.0]);
+
+        let mut recovered = TelemetryMessage::Pose(PoseMessage {
+            v: 1,
+            session: "session-1".to_owned(),
+            seq: 3,
+            t: 3.0,
+            p: [0.0, 0.0, 0.0],
+            q: [0.0, 0.0, 0.0, -1.0],
+            state: PoseState::Tracking,
+        });
+        prepare_telemetry_for_unity(&mut recovered, &mut continuity)
+            .expect("recovered pose should be prepared");
+
+        let TelemetryMessage::Pose(recovered) = recovered else {
+            panic!("message should remain a pose");
+        };
+        assert_eq!(recovered.q, [0.0, 0.0, 0.0, 1.0]);
     }
 }

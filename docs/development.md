@@ -225,7 +225,8 @@ Implemented behavior:
 - preserve point IDs, point-cloud removals, and telemetry metadata;
 - rewrite validated settings from `frame: "slam_world"` to
   `frame: "unity_world"`;
-- apply conversion in the Receiver after validation and quaternion processing.
+- apply conversion in the Receiver after validation and normalization, then
+  preserve quaternion sign continuity in Unity coordinates.
 
 Acceptance criteria:
 
