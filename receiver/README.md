@@ -11,8 +11,9 @@ Each message must contain exactly two multipart frames:
 The Receiver validates transport framing, payload size, UTF-8 encoding, JSON
 syntax, and Protocol v1 fields. Valid payloads are deserialized into typed
 settings, pose, and point-cloud messages. Pose quaternions are normalized and
-made sign-continuous within each session. Coordinate conversion and Unity
-republishing are handled by later Issues.
+made sign-continuous within each session. Valid messages are then converted
+from the canonical SLAM frame into Unity coordinates. Unity republishing is
+handled by a later Issue.
 
 See [`../docs/protocol.md`](../docs/protocol.md) for the Protocol v1 contract.
 
@@ -114,10 +115,21 @@ normalized quaternion with the previous accepted pose in the same session. If
 their dot product is negative, every component of the current quaternion is
 negated. The previous-quaternion reference is reset when the session changes.
 
+## Coordinate conversion
+
+After validation and quaternion processing, the Receiver applies the coordinate
+contract from [`../docs/coordinate-system.md`](../docs/coordinate-system.md):
+
+- pose positions `[x, y, z]` become `[x, -y, z]`;
+- pose quaternions `[x, y, z, w]` become `[-x, y, -z, w]`;
+- point-cloud `add` and `update` coordinates use the same position conversion;
+- point IDs, `remove` entries, and telemetry metadata remain unchanged;
+- valid settings change from `frame: "slam_world"` to
+  `frame: "unity_world"` after input validation.
+
 ## Known limitations
 
 - Sequence gaps and duplicates are not yet tracked.
 - Complete session lifecycle and state clearing are not yet implemented.
-- SLAM-to-Unity coordinate conversion is not yet implemented.
 - Point-cloud deltas are not yet applied to persistent state.
 - Validated telemetry is not yet republished to Unity.

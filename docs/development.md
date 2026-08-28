@@ -211,6 +211,37 @@ Suggested branch:
 feature/11-quaternion-continuity
 ```
 
+## Issue 13: SLAM-to-Unity coordinate conversion
+
+Goal: convert validated telemetry from the canonical `slam_world` frame into
+the `unity_world` frame before local publication and visualization.
+
+Implemented behavior:
+
+- convert pose positions from `[x, y, z]` to `[x, -y, z]`;
+- convert normalized pose quaternions from `[x, y, z, w]` to
+  `[-x, y, -z, w]`;
+- apply the position conversion to point-cloud `add` and `update` entries;
+- preserve point IDs, point-cloud removals, and telemetry metadata;
+- rewrite validated settings from `frame: "slam_world"` to
+  `frame: "unity_world"`;
+- apply conversion in the Receiver after validation and quaternion processing.
+
+Acceptance criteria:
+
+- the documented position, quaternion, and point fixtures convert exactly;
+- known positive-axis movements and 90-degree rotations convert correctly;
+- settings advertise `unity_world` only after their `slam_world` input has
+  passed validation;
+- pose and point-cloud metadata remain unchanged;
+- automated tests and Clippy complete without warnings.
+
+Suggested branch:
+
+```text
+feature/13-coordinate-conversion
+```
+
 ## Local development order
 
 Run and verify components from left to right:

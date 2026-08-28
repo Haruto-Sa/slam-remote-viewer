@@ -8,7 +8,9 @@ use std::{
 
 use clap::Parser;
 use slam_receiver::{
-    PROTOCOL_V1_TOPIC_PREFIX, decode_multipart,
+    PROTOCOL_V1_TOPIC_PREFIX,
+    coordinates::telemetry_to_unity,
+    decode_multipart,
     protocol::{TelemetryMessage, parse_telemetry},
     quaternion::QuaternionContinuity,
 };
@@ -82,6 +84,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                         );
                         continue;
                     }
+
+                    telemetry_to_unity(&mut message);
 
                     received_count += 1;
                     log_received(&message);
