@@ -69,6 +69,7 @@ An Issue is done when:
 - #11 Normalize pose quaternions and preserve sign continuity.
 - #13 Convert `slam_world` coordinates to `unity_world`.
 - #16 Republish converted telemetry to Unity over ZeroMQ.
+- #17 Define a backend-independent SLAM pose source interface.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -272,6 +273,34 @@ Suggested branch:
 
 ```text
 feature/16-unity-republisher
+```
+
+## Issue 17: SLAM pose source interface
+
+Goal: decouple Protocol v1 publishing from concrete SLAM implementations by
+introducing a reusable pose source contract.
+
+Implemented behavior:
+
+- represent a SLAM pose with frame ID, timestamp, translation, quaternion, and
+  tracking state;
+- expose poses through a backend-independent `PoseSource` trait;
+- generate the deterministic circular fixture through `MockPoseSource`;
+- map frame ID, timestamp, pose values, and tracking state into Protocol v1;
+- keep backend-specific and ORB-SLAM3 types out of the network layer.
+
+Acceptance criteria:
+
+- the Mock Sender uses the same interface intended for a real backend;
+- SLAM pose fields serialize to the expected Protocol v1 pose payload;
+- source coordinate assumptions match canonical `Twc` in `slam_world`;
+- finite sessions preserve the existing deterministic pose count;
+- automated tests and Clippy complete without warnings.
+
+Suggested branch:
+
+```text
+feature/17-slam-pose-source
 ```
 
 ## Local development order

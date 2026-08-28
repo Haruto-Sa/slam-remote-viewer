@@ -20,6 +20,24 @@ The Sender publishes `Twc` in `slam_world`, metres, with quaternions in
 See [`../../docs/protocol.md`](../../docs/protocol.md) and
 [`../../docs/coordinate-system.md`](../../docs/coordinate-system.md).
 
+## SLAM pose source interface
+
+The network layer consumes the backend-independent `PoseSource` interface.
+Each `SlamPose` contains a frame ID, session-relative timestamp, translation,
+`[x, y, z, w]` orientation, and tracking state. The Protocol v1 adapter maps:
+
+- source frame ID to pose `seq`;
+- timestamp in seconds to `t`;
+- translation to `p`;
+- orientation to `q`;
+- the backend-independent tracking state to the wire `state` value.
+
+A source must provide camera `Twc` in the canonical right-handed `slam_world`
+frame: +X right, +Y down, +Z forward, in metres. A backend exposing another
+frame or `Tcw` must adapt it before constructing `SlamPose`. The Mock Sender
+uses `MockPoseSource` through the same interface intended for a future real
+SLAM backend.
+
 ## Requirements
 
 - Rust stable toolchain

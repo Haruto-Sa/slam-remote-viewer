@@ -11,7 +11,9 @@ use std::{
 
 use slam_mock_sender::{
     POINTCLOUD_TOPIC, POSE_TOPIC, PointCloudDeltaMessage, PoseMessage, SETTINGS_TOPIC,
-    SettingsMessage, publish_json,
+    SettingsMessage,
+    pose_source::{MockPoseSource, PoseSource},
+    publish_json,
 };
 
 use clap::Parser;
@@ -116,10 +118,6 @@ fn parse_non_empty_string(value: &str) -> Result<String, String> {
     }
 }
 
-fn pose_sample_limit(duration_sec: Option<f64>, pose_rate_hz: f64) -> Option<u64> {
-    duration_sec.map(|duration| (duration * pose_rate_hz).ceil() as u64)
-}
-
 fn run() -> Result<(), Box<dyn Error>> {
     let Cli {
         endpoint,
@@ -129,7 +127,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         angular_speed_rad_per_sec,
         duration_sec,
     } = Cli::parse();
-    let pose_limit = pose_sample_limit(duration_sec, pose_rate_hz);
+    let mut pose_source = MockPoseSource::new(
+        pose_rate_hz,
+        radius_m,
+        angular_speed_rad_per_sec,
+        duration_sec,
+    )?;
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
 
@@ -158,7 +161,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut pose_seq = 0_u64;
     let mut pointcloud_seq = 0_u64;
 
-    while running.load(Ordering::SeqCst) && pose_limit.is_none_or(|limit| pose_seq < limit) {
+    while running.load(Ordering::SeqCst) {
         let now = Instant::now();
 
         if now >= next_settings {
@@ -181,14 +184,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
 
         if now >= next_pose {
-            let pose_time = pose_seq as f64 / pose_rate_hz;
-            let pose = PoseMessage::circular(
-                session.as_str(),
-                pose_seq,
-                pose_time,
-                radius_m,
-                angular_speed_rad_per_sec,
-            );
+            let Some(slam_pose) = pose_source.next_pose()? else {
+                break;
+            };
+            let pose = PoseMessage::from_slam_pose(session.as_str(), slam_pose);
             publish_json(&publisher, POSE_TOPIC, &pose)?;
 
             pose_seq += 1;
@@ -256,14 +255,5 @@ mod tests {
         let result = Cli::try_parse_from(["slam-mock-sender", "--pose-rate-hz", "0"]);
 
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn calculates_finite_pose_sample_count() {
-        assert_eq!(pose_sample_limit(Some(2.0), 10.0), Some(20));
-
-        assert_eq!(pose_sample_limit(Some(0.25), 10.0), Some(3));
-
-        assert_eq!(pose_sample_limit(None, 30.0), None);
     }
 }
