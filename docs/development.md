@@ -70,6 +70,7 @@ An Issue is done when:
 - #13 Convert `slam_world` coordinates to `unity_world`.
 - #16 Republish converted telemetry to Unity over ZeroMQ.
 - #17 Define a backend-independent SLAM pose source interface.
+- #21 Audit the macOS SLAM host and pin the native toolchain.
 
 Future work receives its number when the GitHub Issue is created:
 

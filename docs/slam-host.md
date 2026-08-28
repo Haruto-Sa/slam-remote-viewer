@@ -1,0 +1,82 @@
+# macOS SLAM host
+
+This document defines the host baseline for camera capture and SLAM processing.
+It does not install software. Run the read-only diagnostic from the repository
+root:
+
+```bash
+./tools/diagnose-slam-host.sh
+```
+
+The command exits non-zero when dependencies are missing or the toolchain mixes
+architectures. Its output is safe to attach to an Issue after checking camera
+names for information you do not want to share.
+
+## Canonical architecture
+
+Use one native architecture throughout the C++ dependency graph. An Apple
+Silicon process reports `arm64` and uses the `/opt/homebrew` Homebrew prefix. A
+native Intel process reports `x86_64` and uses `/usr/local`. Do not link arm64
+objects against x86_64 Homebrew libraries or silently build part of the stack
+under Rosetta.
+
+The host audited for Issue #21 currently reports:
+
+| Property | Observed value | Required action |
+|---|---|---|
+| Kernel process architecture | `arm64` | Treat this as Apple Silicon unless the physical machine evidence says otherwise |
+| macOS | `15.6.1` (`24G90`) | Record changes when upgrading |
+| Compiler | Apple Clang 17 | Keep C++ dependencies on the same compiler/standard library |
+| Homebrew prefix | `/usr/local` | Replace or explicitly isolate this Intel/Rosetta installation before native builds |
+| Homebrew CMake/pkg-config | `x86_64` | Do not use them in an arm64 ORB-SLAM3 build |
+| Camera inventory | none reported | Resolve device visibility/privacy before live-capture work |
+| OpenCV/Eigen/Pangolin | not discoverable in the active pkg-config/CMake paths | Install only after the architecture is resolved |
+
+The reported `arm64` host conflicts with the earlier description of this
+machine as an Intel MacBook Air. Use measured architecture, not the model name,
+for build decisions. If this repository is moved to the Intel Mac, rerun the
+diagnostic there and update only the observed-host table in that machine's
+Issue evidence.
+
+## Expected dependency boundary
+
+ORB-SLAM3 is the preferred primary backend. Its upstream documentation requires
+a C++11 compiler, OpenCV 3 or newer, Eigen 3.1 or newer, and Pangolin; its
+modified DBoW2 and g2o copies are included upstream. ROS is optional and is not
+part of this repository's initial macOS path.
+
+Pin exact revisions and confirm versions in Issue #26 rather than relying on
+whatever Homebrew currently provides. Pangolin should be optional for the
+headless telemetry process if the upstream build can be isolated accordingly.
+Generated builds and an ORB-SLAM3 source checkout must not be committed here.
+
+## Backend policy
+
+ORB-SLAM3 remains the primary backend while it builds reproducibly and passes a
+known-dataset smoke test. A failure is recorded with the command, compiler
+diagnostic, architecture of linked libraries, and attempted fix. After three
+independently diagnosed blocking compatibility failures, open a decision Issue
+that compares maintained alternatives against the same camera and pose-source
+contracts. Do not change Protocol v1 or Unity to accommodate a backend.
+
+After the primary backend works, additional SLAM implementations may be added
+behind the same contracts and conformance tests. Backend-specific types must not
+cross into the Rust network layer.
+
+## Licensing
+
+Upstream ORB-SLAM3 is GPLv3. Treat distribution of a linked application as a
+licensing decision, not only a build choice. Keep upstream code and patches
+clearly attributable, record dependency licenses, and obtain project-owner
+review before distributing binaries. Commercial closed-source use requires a
+separate arrangement with the ORB-SLAM3 authors.
+
+## Troubleshooting order
+
+1. Confirm `uname -m` and whether the process is translated by Rosetta.
+2. Confirm `brew --prefix` matches the canonical architecture.
+3. Inspect `file` output for CMake, pkg-config, and eventually linked libraries.
+4. Confirm OpenCV, Eigen, ZeroMQ, and Pangolin are discoverable from the same
+   prefix.
+5. Confirm macOS reports a camera before requesting application permission.
+6. Only then begin the pinned ORB-SLAM3 build Issue.
