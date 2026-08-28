@@ -6,6 +6,7 @@ Read the active documentation in this order:
 2. [Architecture](architecture.md)
 3. [Telemetry Protocol v1](protocol.md)
 4. [Coordinate systems](coordinate-system.md)
+5. [macOS SLAM host](slam-host.md)
 
 Canonical payload examples live in `../protocol/`.
 
