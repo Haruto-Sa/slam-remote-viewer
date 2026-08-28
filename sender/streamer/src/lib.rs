@@ -2,6 +2,10 @@ use std::{error::Error, fmt};
 
 use serde::Serialize;
 
+pub mod pose_source;
+
+use pose_source::{SlamPose, SlamTrackingState};
+
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const SETTINGS_TOPIC: &str = "slam/v1/settings";
 pub const POSE_TOPIC: &str = "slam/v1/pose";
@@ -121,26 +125,26 @@ pub struct PoseMessage {
 }
 
 impl PoseMessage {
-    pub fn circular(
-        session: impl Into<String>,
-        seq: u64,
-        time_sec: f64,
-        radius_m: f64,
-        angular_speed_rad_per_sec: f64,
-    ) -> Self {
-        let angle = angular_speed_rad_per_sec * time_sec;
-        let half_yaw = -0.5 * angle;
-
-        let quaternion_y = if angle == 0.0 { 0.0 } else { half_yaw.sin() };
-
+    pub fn from_slam_pose(session: impl Into<String>, pose: SlamPose) -> Self {
         Self {
             v: PROTOCOL_VERSION,
             session: session.into(),
-            seq,
-            t: time_sec,
-            p: [radius_m * angle.cos(), 0.0, radius_m * angle.sin()],
-            q: [0.0, quaternion_y, 0.0, half_yaw.cos()],
-            state: TrackingState::Tracking,
+            seq: pose.frame_id,
+            t: pose.timestamp_seconds,
+            p: pose.translation,
+            q: pose.orientation_xyzw,
+            state: pose.tracking_state.into(),
+        }
+    }
+}
+
+impl From<SlamTrackingState> for TrackingState {
+    fn from(state: SlamTrackingState) -> Self {
+        match state {
+            SlamTrackingState::Initializing => Self::Initializing,
+            SlamTrackingState::Tracking => Self::Tracking,
+            SlamTrackingState::Lost => Self::Lost,
+            SlamTrackingState::Relocalizing => Self::Relocalizing,
         }
     }
 }
@@ -204,15 +208,6 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    fn assert_approx_eq(actual: f64, expected: f64) {
-        const EPSILON: f64 = 1.0e-12;
-
-        assert!(
-            (actual - expected).abs() < EPSILON,
-            "expected {expected}, got {actual}"
-        );
-    }
-
     #[test]
     fn uses_protocol_v1_settings_topic() {
         assert_eq!(SETTINGS_TOPIC, "slam/v1/settings");
@@ -224,45 +219,51 @@ mod tests {
     }
 
     #[test]
-    fn serializes_initial_circular_pose() {
-        let message = PoseMessage::circular("test-session", 42, 0.0, 2.0, 1.0);
+    fn adapts_slam_pose_to_protocol_v1() {
+        let pose = SlamPose {
+            frame_id: 42,
+            timestamp_seconds: 1.25,
+            translation: [1.0, 2.0, 3.0],
+            orientation_xyzw: [0.1, 0.2, 0.3, 0.9],
+            tracking_state: SlamTrackingState::Relocalizing,
+        };
 
-        let actual = serde_json::to_value(message).expect("pose must serialize");
+        let message = PoseMessage::from_slam_pose("test-session", pose);
 
-        let expected = json!({
-            "v": 1,
-            "session": "test-session",
-            "seq": 42,
-            "t": 0.0,
-            "p": [2.0, 0.0, 0.0],
-            "q": [0.0, 0.0, 0.0, 1.0],
-            "state": "tracking"
-        });
-
-        assert_eq!(actual, expected);
+        assert_eq!(message.v, PROTOCOL_VERSION);
+        assert_eq!(message.session, "test-session");
+        assert_eq!(message.seq, 42);
+        assert_eq!(message.t, 1.25);
+        assert_eq!(message.p, [1.0, 2.0, 3.0]);
+        assert_eq!(message.q, [0.1, 0.2, 0.3, 0.9]);
+        assert_eq!(message.state, TrackingState::Relocalizing);
     }
 
     #[test]
-    fn generate_quarter_turn_pose() {
-        use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2};
+    fn serializes_adapted_slam_pose_as_protocol_v1() {
+        let pose = SlamPose {
+            frame_id: 7,
+            timestamp_seconds: 0.25,
+            translation: [1.0, 2.0, 3.0],
+            orientation_xyzw: [0.0, 0.0, 0.0, 1.0],
+            tracking_state: SlamTrackingState::Lost,
+        };
+        let message = PoseMessage::from_slam_pose("slam-session", pose);
 
-        let pose = PoseMessage::circular("test-session", 7, FRAC_PI_2, 2.0, 1.0);
+        let actual = serde_json::to_value(message).expect("adapted pose should serialize");
 
-        assert_eq!(pose.seq, 7);
-        assert_eq!(pose.state, TrackingState::Tracking);
-
-        assert_approx_eq(pose.p[0], 0.0);
-        assert_approx_eq(pose.p[1], 0.0);
-        assert_approx_eq(pose.p[2], 2.0);
-
-        assert_approx_eq(pose.q[0], 0.0);
-        assert_approx_eq(pose.q[1], -FRAC_1_SQRT_2);
-        assert_approx_eq(pose.q[2], 0.0);
-        assert_approx_eq(pose.q[3], FRAC_1_SQRT_2);
-
-        let quaternion_length = pose.q.iter().map(|value| value * value).sum::<f64>().sqrt();
-
-        assert_approx_eq(quaternion_length, 1.0);
+        assert_eq!(
+            actual,
+            json!({
+                "v": 1,
+                "session": "slam-session",
+                "seq": 7,
+                "t": 0.25,
+                "p": [1.0, 2.0, 3.0],
+                "q": [0.0, 0.0, 0.0, 1.0],
+                "state": "lost"
+            })
+        );
     }
 
     #[test]
