@@ -67,10 +67,11 @@ An Issue is done when:
 - #7 Implement the Rust ZeroMQ telemetry subscriber.
 - #9 Parse and validate Protocol v1 telemetry.
 - #11 Normalize pose quaternions and preserve sign continuity.
+- #13 Convert `slam_world` coordinates to `unity_world`.
+- #16 Republish converted telemetry to Unity over ZeroMQ.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Convert `slam_world` coordinates to `unity_world`.
 - Implement the Unity background subscriber and main-thread queue.
 - Render camera pose and a camera frustum.
 - Retain and render trajectory history.
@@ -241,6 +242,36 @@ Suggested branch:
 
 ```text
 feature/13-coordinate-conversion
+```
+
+## Issue 16: Unity telemetry republisher
+
+Goal: publish validated and converted telemetry from the Receiver on a local
+ZeroMQ endpoint for the Unity Viewer.
+
+Implemented behavior:
+
+- bind a PUB socket to configurable `--output-endpoint`, defaulting to
+  `tcp://127.0.0.1:5556`;
+- serialize converted typed messages as Protocol v1 JSON;
+- publish the original topic and JSON payload as two multipart frames;
+- retain and repeat the latest converted Settings message every five seconds;
+- continue receiving after publication failures and report failure counts;
+- exclude complete payloads from publication-error logs.
+
+Acceptance criteria:
+
+- settings, pose, and point-cloud messages retain their Protocol v1 topics;
+- republished settings advertise `frame: "unity_world"`;
+- invalid telemetry is never passed to the publisher;
+- a late subscriber can recover the latest Settings message;
+- the output endpoint is configurable;
+- automated tests and Clippy complete without warnings.
+
+Suggested branch:
+
+```text
+feature/16-unity-republisher
 ```
 
 ## Local development order

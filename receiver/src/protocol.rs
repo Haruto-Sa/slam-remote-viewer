@@ -1,6 +1,6 @@
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub const SETTINGS_TOPIC: &str = "slam/v1/settings";
 pub const POSE_TOPIC: &str = "slam/v1/pose";
@@ -8,7 +8,7 @@ pub const POINTCLOUD_TOPIC: &str = "slam/v1/pointcloud";
 
 pub const MAX_POINT_ID: u64 = 9_007_199_254_740_991;
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SettingsMessage {
     pub v: u32,
     pub session: String,
@@ -20,7 +20,7 @@ pub struct SettingsMessage {
     pub pointcloud_mode: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CameraSettings {
     #[serde(rename = "type")]
     pub camera_type: String,
@@ -30,7 +30,7 @@ pub struct CameraSettings {
     pub fps: u32,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct PoseMessage {
     pub v: u32,
     pub session: String,
@@ -41,7 +41,7 @@ pub struct PoseMessage {
     pub state: PoseState,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PoseState {
     Initializing,
@@ -52,7 +52,7 @@ pub enum PoseState {
 
 pub type PointEntry = (u64, f64, f64, f64);
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct PointCloudMessage {
     pub v: u32,
     pub session: String,
@@ -464,6 +464,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // Assert the truncated value in the wire fixture exactly.
     fn deserializes_protocol_v1_pose_example() {
         let pose: PoseMessage =
             serde_json::from_str(POSE_EXAMPLE).expect("pose example should deserialize");

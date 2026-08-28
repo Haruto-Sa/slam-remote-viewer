@@ -1,5 +1,6 @@
 pub mod coordinates;
 pub mod protocol;
+pub mod publisher;
 pub mod quaternion;
 
 use std::fmt;
