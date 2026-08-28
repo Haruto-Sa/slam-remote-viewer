@@ -1,0 +1,16 @@
+{
+  "name": "Slam.RemoteViewer",
+  "rootNamespace": "Slam.RemoteViewer",
+  "references": [
+    "Slam.RemoteViewer.Network"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

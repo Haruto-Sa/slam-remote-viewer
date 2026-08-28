@@ -1,0 +1,26 @@
+{
+  "name": "Slam.RemoteViewer.Network.Tests",
+  "rootNamespace": "Slam.RemoteViewer.Network.Tests",
+  "references": [
+    "Slam.RemoteViewer.Network"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "AsyncIO.dll",
+    "NetMQ.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
