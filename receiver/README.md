@@ -1,7 +1,8 @@
 # SLAM Receiver
 
 `slam-receiver` connects to a ZeroMQ PUB endpoint and receives Protocol v1
-telemetry as a SUB client.
+telemetry as a SUB client. It validates and converts accepted telemetry, then
+republishes it from a local PUB endpoint for Unity.
 
 Each message must contain exactly two multipart frames:
 
@@ -50,10 +51,12 @@ cargo clippy --manifest-path receiver/Cargo.toml -- -D warnings
 cargo run \
   --manifest-path receiver/Cargo.toml \
   -- \
-  --endpoint 'tcp://127.0.0.1:5555'
+  --endpoint 'tcp://127.0.0.1:5555' \
+  --output-endpoint 'tcp://127.0.0.1:5556'
 ```
 
-The default endpoint is `tcp://127.0.0.1:5555`, so `--endpoint` can be omitted.
+Both shown endpoints are defaults, so either option can be omitted. The input
+endpoint connects to the Sender; the output endpoint binds locally for Unity.
 
 Press Ctrl-C to stop cleanly.
 
@@ -82,6 +85,12 @@ received topic=slam/v1/settings session=receiver-test seq=-
 received topic=slam/v1/pose session=receiver-test seq=0
 received topic=slam/v1/pointcloud session=receiver-test seq=0
 ```
+
+Accepted messages are serialized and republished with the same topics as two
+multipart frames. The latest converted Settings message is repeated every five
+seconds so a late Unity subscriber can establish the session contract. Send
+failures are logged using topic, session, sequence metadata, and a reason; the
+payload is never logged. Publication counts appear in the shutdown summary.
 
 ## Validation behavior
 
@@ -134,4 +143,3 @@ coordinate contract from
 - Sequence gaps and duplicates are not yet tracked.
 - Complete session lifecycle and state clearing are not yet implemented.
 - Point-cloud deltas are not yet applied to persistent state.
-- Validated telemetry is not yet republished to Unity.
