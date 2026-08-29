@@ -148,3 +148,18 @@ and reset key are configurable in the Inspector. Motion uses unscaled time, so
 camera navigation continues when `Time.timeScale` is zero. Pointer input over
 the visible telemetry diagnostics panel is ignored; hiding the panel makes its
 screen area available for camera input again.
+
+## World grid and axes
+
+The default `Viewer` scene includes `WorldReferenceVisualizer` on the
+world-origin `World Reference` GameObject. It draws an XZ ground grid plus the
+positive Unity axes: X is red and points right, Y is green and points up, and Z
+is blue and points forward.
+
+`Show Reference` hides or shows the complete reference without affecting
+telemetry. `Grid Spacing`, `Grid Extent`, `Line Width`, `Grid Color`, `Axis
+Length`, and the three axis colors are configurable in the Inspector. Grid
+geometry uses complete spacing intervals within the configured extent and is
+batched into one mesh; together with the three axis lines, the renderer count
+remains fixed at four. The reference does not subscribe to telemetry, so
+session changes do not rebuild or clear it.
