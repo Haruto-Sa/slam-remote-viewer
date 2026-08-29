@@ -40,3 +40,34 @@ ctest --test-dir sender/slam/build --output-on-failure
 ```
 
 Build output under `sender/slam/build/` is ignored and must not be committed.
+
+## Recorded monocular input
+
+`RecordedFrameSource` reads a finite ordered sequence of binary PGM (`P5`)
+files with 8-bit grayscale pixels. This deliberately dependency-free format is
+the reference source for camera and SLAM tests before OpenCV is available.
+
+Frame IDs are the zero-based position in the configured path list. Timestamps
+are `frame_id * frame_period`, so playback never depends on filesystem metadata
+or scheduler timing. Missing, malformed, truncated, or dimension-mismatched
+files produce an observable recoverable error and do not prevent a later file
+from being read. EOF, cancellation, timeout, and failure remain distinct.
+
+Inspect a sequence after building:
+
+```bash
+./sender/slam/build/recorded_frame_dump \
+  640 480 30 \
+  path/to/000000.pgm path/to/000001.pgm
+```
+
+Expected output contains only deterministic metadata, for example:
+
+```text
+frame=0 timestamp_ns=0 size=640x480 bytes=307200
+frame=1 timestamp_ns=33333333 size=640x480 bytes=307200
+```
+
+The diagnostic accepts placeholder pinhole intrinsics because it does not run
+SLAM. A SLAM executable must instead load calibration produced and validated by
+Issue #25.
