@@ -1,4 +1,5 @@
 pub mod coordinates;
+pub mod playback;
 pub mod protocol;
 pub mod publisher;
 pub mod quaternion;
