@@ -1,6 +1,7 @@
 .DS_Store
 .env
 target/
+/recordings/
 
 # Unity generated state
 /unity/[Ll]ibrary/

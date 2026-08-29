@@ -13,8 +13,8 @@ The Receiver validates transport framing, payload size, UTF-8 encoding, JSON
 syntax, and Protocol v1 fields. Valid payloads are deserialized into typed
 settings, pose, and point-cloud messages. Pose quaternions are normalized,
 converted from the canonical SLAM frame into Unity coordinates, and then made
-sign-continuous within each session. Unity republishing is handled by a later
-Issue.
+sign-continuous within each session. Accepted telemetry is republished for
+Unity and can optionally be recorded for offline inspection.
 
 See [`../docs/protocol.md`](../docs/protocol.md) for the Protocol v1 contract.
 
@@ -52,11 +52,13 @@ cargo run \
   --manifest-path receiver/Cargo.toml \
   -- \
   --endpoint 'tcp://127.0.0.1:5555' \
-  --output-endpoint 'tcp://127.0.0.1:5556'
+  --output-endpoint 'tcp://127.0.0.1:5556' \
+  --record-dir recordings
 ```
 
 Both shown endpoints are defaults, so either option can be omitted. The input
 endpoint connects to the Sender; the output endpoint binds locally for Unity.
+Recording is disabled when `--record-dir` is omitted.
 
 Press Ctrl-C to stop cleanly.
 
@@ -91,6 +93,45 @@ multipart frames. The latest converted Settings message is repeated every five
 seconds so a late Unity subscriber can establish the session contract. Send
 failures are logged using topic, session, sequence metadata, and a reason; the
 payload is never logged. Publication counts appear in the shutdown summary.
+
+## Session recording and PLY export
+
+When `--record-dir` is specified, the Receiver sends accepted, converted
+telemetry to a dedicated recording thread. Network reception and Unity
+publication do not wait for file writes. Pose and PointCloud messages are
+rejected until Settings establishes the active session, and telemetry for a
+different session is rejected.
+
+Each session creates a directory beneath the configured root. Unsafe filename
+characters are replaced, and an incrementing suffix prevents an existing
+recording from being overwritten:
+
+```text
+recordings/
+└── receiver-test/
+    ├── telemetry.ndjson
+    ├── pointcloud.ply
+    └── metadata.json
+```
+
+- `telemetry.ndjson` contains one `{ "topic", "payload" }` object per accepted
+  input message in arrival order.
+- `pointcloud.ply` is an ASCII PLY containing final retained positions in
+  `unity_world` coordinates. Positions are emitted in ascending point-ID order;
+  IDs are used for state management but are not exported as a PLY property.
+- `metadata.json` records the protocol version, session, coordinate frame and
+  unit, message counts, final point count, and output filenames.
+
+Point-cloud operations are applied in Protocol v1 order: remove, update, then
+add. Unknown updates add a point, existing adds replace its position, and
+unknown removals are no-ops. A new Settings session finalizes the previous
+recording and starts with empty point state. Ctrl-C drains the recording queue
+and finalizes the active session before the Receiver exits.
+
+PLY and metadata files are written through temporary files and renamed only
+after a successful flush. File errors include the failed operation and path;
+the Receiver exits unsuccessfully when requested recording cannot be
+finalized.
 
 ## Validation behavior
 
@@ -141,5 +182,5 @@ coordinate contract from
 ## Known limitations
 
 - Sequence gaps and duplicates are not yet tracked.
-- Complete session lifecycle and state clearing are not yet implemented.
-- Point-cloud deltas are not yet applied to persistent state.
+- Session lifecycle is enforced for recording and Unity republishing, but no
+  explicit end-of-session Protocol v1 message exists.

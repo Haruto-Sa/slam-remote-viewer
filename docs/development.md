@@ -76,10 +76,10 @@ An Issue is done when:
 - #32 Render the camera pose and frustum in Unity.
 - #34 Retain and render trajectory history in Unity.
 - #36 Apply and render point-cloud deltas in Unity.
+- #39 Record telemetry sessions and export the final point cloud as PLY.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Record sessions and export the final point cloud as PLY.
 - Connect the real SLAM adapter.
 
 Each Issue must leave the system runnable. Until the real SLAM adapter exists,
@@ -443,6 +443,42 @@ Suggested branch:
 
 ```text
 feature/36-unity-point-cloud
+```
+
+## Issue 39: Session recording and PLY export
+
+Goal: record accepted Unity-coordinate Protocol v1 telemetry and export the
+final retained point cloud for offline inspection.
+
+Implemented behavior:
+
+- enable recording explicitly with the Receiver's `--record-dir` option;
+- require Settings before Pose or PointCloud telemetry and reject messages for
+  a session other than the active one;
+- move serialization and file writes to a dedicated recording thread;
+- create a separate, non-overwriting directory for every observed session;
+- record accepted Settings, Pose, and PointCloud messages in arrival order as
+  newline-delimited JSON;
+- apply point-cloud changes in remove, update, then add order;
+- retain points by ID and write final positions in ascending ID order;
+- finalize ASCII PLY and JSON metadata files on session change or clean
+  Receiver shutdown;
+- report file-operation failures with the affected path and operation.
+
+Acceptance criteria:
+
+- recorded telemetry can be inspected without Unity;
+- the PLY vertex count equals the retained point count;
+- removed points are absent and updated points contain their latest positions;
+- session changes produce separate output directories and point states;
+- failed output paths produce actionable errors;
+- automated tests cover session gating, delta semantics, deterministic export,
+  message ordering, session reset, and write failures.
+
+Suggested branch:
+
+```text
+feature/39-session-recording-ply
 ```
 
 ## Local development order
