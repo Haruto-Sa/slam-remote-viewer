@@ -1,6 +1,8 @@
 .DS_Store
 .env
 target/
+__pycache__/
+*.py[cod]
 /recordings/
 
 # Unity generated state
@@ -23,3 +25,5 @@ target/
 
 # Native SLAM adapter build output
 /sender/slam/build/
+/sender/slam/calibration/*.calibration
+!/sender/slam/calibration/example.calibration

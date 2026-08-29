@@ -21,12 +21,21 @@ add_library(slam_recorded_frame_source src/recorded_frame_source.cpp)
 add_library(slam::recorded_frame_source ALIAS slam_recorded_frame_source)
 target_link_libraries(slam_recorded_frame_source PUBLIC slam::camera_contracts)
 
+add_library(slam_calibration_io src/calibration_io.cpp)
+add_library(slam::calibration_io ALIAS slam_calibration_io)
+target_link_libraries(slam_calibration_io PUBLIC slam::camera_contracts)
+
 add_executable(recorded_frame_dump tools/recorded_frame_dump.cpp)
 target_link_libraries(recorded_frame_dump PRIVATE slam::recorded_frame_source)
+
+add_executable(calibration_convert tools/calibration_convert.cpp)
+target_link_libraries(calibration_convert PRIVATE slam::calibration_io)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(slam_recorded_frame_source PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(recorded_frame_dump PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 if(APPLE)
@@ -85,4 +94,11 @@ if(SLAM_BUILD_TESTS)
         target_compile_options(live_frame_queue_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME live_frame_queue_tests COMMAND live_frame_queue_tests)
+
+    add_executable(calibration_io_tests tests/calibration_io_tests.cpp)
+    target_link_libraries(calibration_io_tests PRIVATE slam::calibration_io)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(calibration_io_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME calibration_io_tests COMMAND calibration_io_tests)
 endif()

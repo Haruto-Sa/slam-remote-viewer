@@ -115,3 +115,42 @@ FaceTime HD camera delivered ten BGR8 frames at negotiated `1280x720@30` with
 monotonic IDs and timestamps, zero reported drops, and clean finite shutdown.
 The diagnostic also enumerated a Continuity Camera without persisting either
 device's machine-specific unique ID in the repository.
+
+## Monocular calibration
+
+Capture at least ten sharp checkerboard views at the exact device, resolution,
+and pixel mode used for SLAM. Cover the full image area with varied board
+distance and orientation; avoid using near-duplicate views. The board arguments
+are inner-corner counts, and square size is measured in metres.
+
+After installing architecture-matched Python OpenCV and NumPy, calculate a
+pinhole calibration:
+
+```bash
+./tools/calibrate_monocular.py \
+  --images 'calibration-images/*.png' \
+  --device-id 'AVFOUNDATION_UNIQUE_ID' \
+  --fps 30 \
+  --board-columns 9 \
+  --board-rows 6 \
+  --square-size-m 0.024 \
+  --output camera.calibration
+```
+
+The output records device ID, dimensions, FPS, intrinsics, distortion,
+reprojection RMS, board geometry, UTC generation time, and source glob. Validate
+it and generate an ORB-SLAM3 monocular YAML file:
+
+```bash
+./sender/slam/build/calibration_convert camera.calibration orb-camera.yaml
+```
+
+The loader rejects missing, duplicate, unknown, non-finite, and wrongly typed
+fields. A live source must use the same device ID, dimensions, and FPS as the
+document. `example.calibration` is a format fixture only and must not be used as
+real camera calibration. Machine-specific calibration output is intentionally
+not committed.
+
+The generated YAML uses BGR input (`Camera.RGB: 0`) and explicit ORB extractor
+defaults. Review feature settings during the ORB-SLAM3 dataset Issue; calibration
+conversion does not claim that the defaults are optimal for every camera.

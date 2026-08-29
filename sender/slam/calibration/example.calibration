@@ -1,0 +1,17 @@
+version=1
+device_id=example-camera-id
+width=1280
+height=720
+fps=30
+model=pinhole
+fx=900.5
+fy=901.5
+cx=640
+cy=360
+distortion=0.1,-0.2,0.003,-0.004,0.05
+rms_reprojection_error_px=0.42
+board_columns=9
+board_rows=6
+square_size_m=0.024
+calibrated_at_utc=2026-08-30T00:00:00Z
+source=calibration-images/*.png
