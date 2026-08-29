@@ -19,3 +19,6 @@ target/
 *.suo
 *.user
 *.userprefs
+
+# Native SLAM adapter build output
+/sender/slam/build/

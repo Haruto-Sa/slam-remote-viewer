@@ -17,6 +17,10 @@ v1 contract. During viewer development, a Mock Sender replaces Camera and SLAM.
 ### SLAM adapter
 
 - obtains frames from the selected camera source;
+- consumes immutable frames through a platform-independent `FrameSource`
+  contract shared by recorded and live inputs;
+- keeps capture timestamps monotonic and binds calibration to device and image
+  dimensions;
 - converts library-specific output to canonical `Twc`;
 - supplies poses and map-point changes to the Sender.
 
