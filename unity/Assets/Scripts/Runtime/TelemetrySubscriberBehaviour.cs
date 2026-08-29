@@ -21,9 +21,15 @@ namespace Slam.RemoteViewer
 
         public event Action<ITelemetryMessage> MessageReceived;
 
+        public string Endpoint => endpoint;
+        public bool IsRunning => subscriber?.IsRunning ?? false;
         public long AcceptedCount => ingress?.AcceptedCount ?? 0;
         public long RejectedCount => ingress?.RejectedCount ?? 0;
         public long DroppedCount => ingress?.DroppedCount ?? 0;
+        public int QueueCount => queue?.Count ?? 0;
+        public long FaultCount => subscriber?.FaultCount ?? 0;
+        public string LastFault => subscriber?.LastFault;
+        public string LastRejectionReason => ingress?.LastRejectionReason;
 
         private void OnEnable()
         {

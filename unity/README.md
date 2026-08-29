@@ -31,8 +31,9 @@ telemetry should be received. The component:
 - cancels and joins the worker when the component is disabled.
 
 The worker does not call Unity APIs. Consumers should update scenes only from
-the `MessageReceived` callback. `AcceptedCount`, `RejectedCount`, and
-`DroppedCount` expose ingress health for diagnostics.
+the `MessageReceived` callback. The component exposes its endpoint, running
+state, queue depth, accepted/rejected/dropped counts, and latest rejection or
+subscriber fault for diagnostics.
 
 ## Tests
 
@@ -94,3 +95,40 @@ order: remove, update, then add. An unknown update adds the point, an existing
 add updates it, and an unknown remove is ignored. A new Settings session clears
 all point state and particles. Point material, color, size, and visibility are
 configurable in the Inspector.
+
+## Telemetry diagnostics overlay
+
+The default `Viewer` scene includes `TelemetryDiagnosticsOverlay` on the
+`Telemetry` GameObject. When its source fields are empty, it discovers the
+subscriber and visualizers on the same GameObject. Missing trajectory or
+point-cloud visualizers are displayed as `N/A` and do not stop the overlay.
+
+The panel shows:
+
+- subscriber endpoint and current session;
+- latest pose tracking state;
+- age of the latest accepted main-thread message;
+- accepted, rejected, and dropped message counts;
+- current main-thread queue depth;
+- retained trajectory and point-cloud point counts;
+- subscriber fault count, latest fault, and latest rejection reason.
+
+Health statuses mean:
+
+- `Waiting`: the subscriber is running but no accepted Settings or telemetry
+  has reached the main thread;
+- `Receiving`: an accepted message arrived within `Stale Timeout Seconds`;
+- `Stale`: the subscriber remains running but no accepted message arrived
+  within the timeout;
+- `Stopped`: the subscriber thread is not running or the component is disabled.
+
+`Show Overlay` controls only drawing; telemetry subscription, visualization,
+and diagnostic state updates continue when it is off. Increase `Panel Rect`
+or change `Font Size` if longer endpoint or error text is clipped. The Viewer
+scene defaults to a `520 x 360` panel with an `18`-pixel font for readable
+display on Retina-class development screens.
+
+For a quick check, enter Play Mode without a Receiver and observe `Waiting`.
+Then start the Receiver plus Mock Sender, or the recorded-session player, and
+observe `Receiving`, session/tracking values, and increasing counters. Stop the
+producer and wait for the configured timeout to verify `Stale`.

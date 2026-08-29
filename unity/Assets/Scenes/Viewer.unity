@@ -321,6 +321,7 @@ GameObject:
   - component: {fileID: 1238453619}
   - component: {fileID: 1238453622}
   - component: {fileID: 1238453623}
+  - component: {fileID: 1238453624}
   m_Layer: 0
   m_Name: Telemetry
   m_TagString: Untagged
@@ -418,6 +419,31 @@ MonoBehaviour:
   pointSize: 0.04
   pointColor: {r: 0.9, g: 0.95, b: 1, a: 1}
   showPointCloud: 1
+--- !u!114 &1238453624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238453618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae35fa25d93c452980ba646576864bc1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Slam.RemoteViewer::Slam.RemoteViewer.TelemetryDiagnosticsOverlay
+  subscriber: {fileID: 0}
+  cameraPoseVisualizer: {fileID: 0}
+  trajectoryVisualizer: {fileID: 0}
+  pointCloudVisualizer: {fileID: 0}
+  staleTimeoutSeconds: 2
+  showOverlay: 1
+  panelRect:
+    serializedVersion: 2
+    x: 16
+    y: 16
+    width: 520
+    height: 360
+  fontSize: 18
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -79,6 +79,7 @@ An Issue is done when:
 - #36 Apply and render point-cloud deltas in Unity.
 - #39 Record telemetry sessions and export the final point cloud as PLY.
 - #42 Replay recorded telemetry sessions into Unity.
+- #45 Add a Unity telemetry diagnostics overlay.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -519,6 +520,45 @@ Suggested branch:
 
 ```text
 feature/42-telemetry-session-player
+```
+
+## Issue 45: Unity telemetry diagnostics overlay
+
+Goal: expose live Viewer health in Unity so camera and SLAM integration can be
+diagnosed without relying only on terminal logs.
+
+Implemented behavior:
+
+- maintain a testable diagnostics state model with stopped, waiting,
+  receiving, and stale states;
+- track the active session, latest pose state, and accepted-message age on
+  Unity's main thread;
+- expose the subscriber endpoint, running state, queue depth, counts, and
+  latest rejection/fault information through read-only properties;
+- read retained trajectory and point-cloud counts from their visualizers;
+- tolerate missing optional visualizer references and report their counts as
+  unavailable;
+- draw an optional immediate-mode overlay without adding UI package or asset
+  dependencies;
+- keep telemetry processing and state updates active while drawing is hidden;
+- add the overlay to the default Viewer scene with a configurable stale timeout,
+  panel rectangle, font size, and visibility.
+
+Acceptance criteria:
+
+- state changes from waiting to receiving after accepted telemetry and becomes
+  stale after the configured quiet period;
+- stopped subscriber state, session reset, pose tracking state, counters, and
+  optional visualizer counts are represented correctly;
+- disabling overlay drawing does not disable its component or subscriber;
+- EditMode tests cover status transitions, session reset, mismatches, counters,
+  missing counts, and invalid time configuration;
+- no files below `sender/slam` are changed.
+
+Suggested branch:
+
+```text
+feature/45-unity-telemetry-diagnostics
 ```
 
 ## Local development order
