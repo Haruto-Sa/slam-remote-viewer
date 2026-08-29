@@ -132,3 +132,19 @@ For a quick check, enter Play Mode without a Receiver and observe `Waiting`.
 Then start the Receiver plus Mock Sender, or the recorded-session player, and
 observe `Receiving`, session/tracking values, and increasing counters. Stop the
 producer and wait for the configured timeout to verify `Stale`.
+
+## Viewer camera controls
+
+The default `Viewer` scene includes `OrbitCameraController` on `Main Camera`.
+In Play Mode:
+
+- hold the right mouse button and drag to orbit around the focus point;
+- hold the middle mouse button and drag to pan the camera and focus point;
+- use the mouse wheel to zoom;
+- press `R` to restore the initial camera pose and focus point.
+
+The focus point, distance and pitch limits, orbit and pan speeds, zoom amount,
+and reset key are configurable in the Inspector. Motion uses unscaled time, so
+camera navigation continues when `Time.timeScale` is zero. Pointer input over
+the visible telemetry diagnostics panel is ignored; hiding the panel makes its
+screen area available for camera input again.

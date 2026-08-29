@@ -227,6 +227,7 @@ GameObject:
   - component: {fileID: 988585370}
   - component: {fileID: 988585369}
   - component: {fileID: 988585368}
+  - component: {fileID: 988585371}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -308,6 +309,28 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &988585371
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 988585367}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1d4d49937a994913b3313933547686ca, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Slam.RemoteViewer::Slam.RemoteViewer.OrbitCameraController
+  focusPoint: {x: 0, y: 1, z: 0}
+  minimumDistance: 0.5
+  maximumDistance: 100
+  minimumPitchDegrees: -85
+  maximumPitchDegrees: 85
+  orbitSpeedDegreesPerSecond: 180
+  panSpeedUnitsPerSecond: 5
+  zoomUnitsPerScroll: 1.5
+  resetKey: 114
+  diagnosticsOverlay: {fileID: 1238453624}
 --- !u!1 &1238453618
 GameObject:
   m_ObjectHideFlags: 0

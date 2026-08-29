@@ -167,6 +167,7 @@ namespace Slam.RemoteViewer
             if (orderedPositions.Count == 0)
             {
                 particleSystemTarget.Clear(true);
+                SetRendererBounds(new Bounds(Vector3.zero, Vector3.zero));
                 RenderedPointCount = 0;
                 RenderRevision++;
                 return;
@@ -186,6 +187,7 @@ namespace Slam.RemoteViewer
             }
 
             particleSystemTarget.SetParticles(particles, particles.Length);
+            UpdateRendererBounds();
             RenderedPointCount = particles.Length;
             if (!particleSystemTarget.isPlaying)
             {
@@ -195,6 +197,27 @@ namespace Slam.RemoteViewer
             }
 
             RenderRevision++;
+        }
+
+        private void UpdateRendererBounds()
+        {
+            Transform particleTransform = particleSystemTarget.transform;
+            Vector3 firstPosition = particleTransform.InverseTransformPoint(orderedPositions[0]);
+            var bounds = new Bounds(firstPosition, Vector3.one * pointSize);
+            for (var index = 1; index < orderedPositions.Count; index++)
+            {
+                Vector3 localPosition = particleTransform.InverseTransformPoint(
+                    orderedPositions[index]);
+                bounds.Encapsulate(new Bounds(localPosition, Vector3.one * pointSize));
+            }
+
+            SetRendererBounds(bounds);
+        }
+
+        private void SetRendererBounds(Bounds bounds)
+        {
+            var renderer = particleSystemTarget.GetComponent<ParticleSystemRenderer>();
+            renderer.localBounds = bounds;
         }
 
         private Material GetOrCreateDefaultMaterial()

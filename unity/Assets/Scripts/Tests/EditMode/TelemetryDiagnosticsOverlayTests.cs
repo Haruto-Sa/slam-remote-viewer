@@ -28,6 +28,41 @@ namespace Slam.RemoteViewer.Tests
             }
         }
 
+        [Test]
+        public void VisibleOverlayContainsPointsInsideItsGuiPanel()
+        {
+            var gameObject = new GameObject("Telemetry Diagnostics Test");
+            try
+            {
+                var overlay = gameObject.AddComponent<TelemetryDiagnosticsOverlay>();
+
+                Assert.That(overlay.ContainsScreenPoint(new Vector2(20f, 780f), 800f), Is.True);
+                Assert.That(overlay.ContainsScreenPoint(new Vector2(600f, 780f), 800f), Is.False);
+                Assert.That(overlay.ContainsScreenPoint(new Vector2(20f, 200f), 800f), Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(gameObject);
+            }
+        }
+
+        [Test]
+        public void HiddenOverlayDoesNotBlockPointerInput()
+        {
+            var gameObject = new GameObject("Telemetry Diagnostics Test");
+            try
+            {
+                var overlay = gameObject.AddComponent<TelemetryDiagnosticsOverlay>();
+                overlay.ShowOverlay = false;
+
+                Assert.That(overlay.ContainsScreenPoint(new Vector2(20f, 780f), 800f), Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(gameObject);
+            }
+        }
+
         private static SettingsMessage Settings(string session)
         {
             return new SettingsMessage(
