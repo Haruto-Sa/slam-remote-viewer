@@ -81,3 +81,34 @@ separate arrangement with the ORB-SLAM3 authors.
    prefix.
 5. Confirm macOS reports a camera before requesting application permission.
 6. Only then begin the pinned ORB-SLAM3 build Issue.
+
+## Reproducible Apple Silicon ORB-SLAM3 build
+
+Issue #26 provides an isolated build that does not use the Intel Homebrew
+libraries under `/usr/local`. It creates an osx-arm64 Conda environment and
+keeps all upstream sources, patches, and build products under `/private/tmp`:
+
+```bash
+./tools/bootstrap-orbslam3-macos.sh
+```
+
+The dependency revisions and package versions are recorded in
+`sender/slam/orbslam3/dependencies.lock.sh`. The upstream ORB-SLAM3 source is
+patched only in the temporary checkout. The patch removes host-specific
+`-march=native` flags, links the platform dylib names, and uses imported Boost
+and OpenSSL targets. It does not vendor upstream code in this repository.
+
+The final verifier rejects any ORB-SLAM3 library that is not arm64 or that
+links a dependency from `/usr/local`. Override the temporary location or build
+parallelism only with task-specific variables:
+
+```bash
+SLAM_ORB_WORK_ROOT=/private/tmp/my-orb-build SLAM_BUILD_JOBS=4 \
+  ./tools/bootstrap-orbslam3-macos.sh
+```
+
+After the library build passes, run a monocular dataset through the upstream
+`mono_*` example with `Vocabulary/ORBvoc.txt` and matching calibration. Datasets
+and the expanded vocabulary remain external artifacts and must not be committed.
+Live camera testing belongs to Issue #29 so dependency failures are not confused
+with capture or calibration failures.
