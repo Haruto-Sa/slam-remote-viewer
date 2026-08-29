@@ -68,3 +68,17 @@ Settings establish the active session and camera aspect ratio. A new session
 resets and hides the previous pose; poses received before matching Settings are
 ignored. Marker and frustum colors indicate `tracking`, `initializing`, `lost`,
 and `relocalizing` states.
+
+## Trajectory history
+
+Add `CameraTrajectoryVisualizer` to the same `Telemetry` GameObject as the
+subscriber and camera-pose visualizer. Its scene references may remain empty;
+the component creates a `Camera Trajectory` root and one LineRenderer per
+continuous tracking interval.
+
+Only `tracking` poses contribute points. `initializing`, `lost`, and
+`relocalizing` break the current line so a later tracking pose starts a new
+segment. A new Settings session clears all retained points and segments.
+`Minimum Point Distance` controls spatial downsampling, while `Maximum Point
+Count` bounds memory and removes the oldest positions first. Line material,
+color, and width are configurable in the Inspector.

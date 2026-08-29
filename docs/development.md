@@ -73,10 +73,10 @@ An Issue is done when:
 - #20 Implement the Unity background subscriber and main-thread queue.
 - #21 Audit the macOS SLAM host and pin the native toolchain.
 - #32 Render the camera pose and frustum in Unity.
+- #34 Retain and render trajectory history in Unity.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Retain and render trajectory history.
 - Apply and render point-cloud deltas.
 - Record sessions and export the final point cloud as PLY.
 - Connect the real SLAM adapter.
@@ -371,6 +371,41 @@ Suggested branch:
 
 ```text
 feature/32-unity-camera-frustum
+```
+
+## Issue 34: Unity trajectory history
+
+Goal: retain a bounded history of tracking positions and render the traveled
+path without drawing across tracking gaps.
+
+Implemented behavior:
+
+- consume Settings and Pose messages from the subscriber's main-thread event;
+- retain positions only while the pose state is `tracking`;
+- split the rendered path after `initializing`, `lost`, or `relocalizing`;
+- discard positions closer than a configurable minimum distance;
+- enforce a configurable point capacity with deterministic drop-oldest
+  behavior;
+- clear all points and rendered segments when the session changes;
+- ignore poses received before Settings or for another session;
+- create a default trajectory root and LineRenderers when scene references are
+  empty;
+- expose line material, color, width, sampling distance, and capacity in the
+  Inspector.
+
+Acceptance criteria:
+
+- tracking positions render in arrival order;
+- history remains bounded and removes its oldest points first;
+- tracking gaps produce separate LineRenderer segments;
+- a session change removes the previous trajectory;
+- all scene changes occur on Unity's main thread;
+- EditMode tests cover retention, sampling, overflow, gaps, and reset.
+
+Suggested branch:
+
+```text
+feature/34-unity-trajectory
 ```
 
 ## Local development order
