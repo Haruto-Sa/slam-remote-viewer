@@ -71,3 +71,47 @@ frame=1 timestamp_ns=33333333 size=640x480 bytes=307200
 The diagnostic accepts placeholder pinhole intrinsics because it does not run
 SLAM. A SLAM executable must instead load calibration produced and validated by
 Issue #25.
+
+## macOS live monocular input
+
+On macOS, `MacosCameraSource` uses AVFoundation behind the common `FrameSource`
+interface. It selects a camera by AVFoundation `uniqueID`, negotiates an exact
+width, height, and FPS, receives callbacks on a serial dispatch queue, converts
+BGRA buffers to owned BGR8 frames, and reports timestamps relative to the first
+captured sample.
+
+List devices and the current permission state:
+
+```bash
+./sender/slam/build/macos_camera_dump --list
+```
+
+Request permission only as an explicit user action:
+
+```bash
+./sender/slam/build/macos_camera_dump --request-permission
+```
+
+Then capture a finite diagnostic session:
+
+```bash
+./sender/slam/build/macos_camera_dump DEVICE_ID 1280 720 30 100
+```
+
+The diagnostic executable embeds `NSCameraUsageDescription`. A packaged or
+sandboxed application must also declare the macOS Camera capability/entitlement.
+Denied permission, a missing device, and an unsupported mode are reported before
+capture starts.
+
+The callback queue discards late AVFoundation frames. The application queue is
+also bounded and drops its oldest frame when full, preserving the freshest data
+for real-time SLAM. `dropped_frames()` counts both AVFoundation-reported late
+frames and application queue overflow. `RequestStop()` cancels a waiting
+consumer, and `Stop()` drains the callback queue before releasing capture
+objects.
+
+Issue #24 was verified after explicitly granting camera access. The built-in
+FaceTime HD camera delivered ten BGR8 frames at negotiated `1280x720@30` with
+monotonic IDs and timestamps, zero reported drops, and clean finite shutdown.
+The diagnostic also enumerated a Continuity Camera without persisting either
+device's machine-specific unique ID in the repository.

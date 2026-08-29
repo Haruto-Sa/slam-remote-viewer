@@ -65,12 +65,12 @@ class ImageFrame final {
     [[nodiscard]] const std::vector<std::uint8_t>& pixels() const noexcept { return pixels_; }
 
    private:
-    const std::uint64_t frame_id_;
-    const Timestamp timestamp_;
-    const std::uint32_t width_;
-    const std::uint32_t height_;
-    const PixelFormat pixel_format_;
-    const std::vector<std::uint8_t> pixels_;
+    std::uint64_t frame_id_;
+    Timestamp timestamp_;
+    std::uint32_t width_;
+    std::uint32_t height_;
+    PixelFormat pixel_format_;
+    std::vector<std::uint8_t> pixels_;
 };
 
 }  // namespace slam_remote::camera

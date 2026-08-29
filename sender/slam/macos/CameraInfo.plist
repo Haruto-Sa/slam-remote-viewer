@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>dev.slam-remote-viewer.camera-dump</string>
+    <key>CFBundleName</key>
+    <string>SLAM Camera Diagnostic</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Capture camera frames for local SLAM processing and diagnostics.</string>
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
+</dict>
+</plist>
