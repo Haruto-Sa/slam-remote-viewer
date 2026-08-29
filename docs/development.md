@@ -83,6 +83,7 @@ An Issue is done when:
 - #42 Replay recorded telemetry sessions into Unity.
 - #45 Add a Unity telemetry diagnostics overlay.
 - #49 Add orbit, pan, and zoom controls to the Unity Viewer.
+- #51 Add a configurable world grid and axis reference to the Unity Viewer.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -598,6 +599,40 @@ Suggested branch:
 
 ```text
 feature/49-unity-orbit-camera
+```
+
+## Issue 51: Unity world grid and axis reference
+
+Goal: make world origin, scale, and positive-axis orientation visible while
+inspecting poses, trajectories, and point clouds.
+
+Implemented behavior:
+
+- build deterministic XZ-grid geometry independently from telemetry and Unity
+  input APIs;
+- batch all grid lines into one generated mesh;
+- render positive X, Y, and Z axes in red, green, and blue with three fixed
+  LineRenderers;
+- expose visibility, spacing, extent, line width, axis length, and colors in
+  the Inspector;
+- clamp Inspector configuration to finite geometry limits;
+- attach a world-origin reference object to the default Viewer scene.
+
+Acceptance criteria:
+
+- the grid is centered at the world origin and uses complete spacing steps;
+- positive axes follow Unity's X-right, Y-up, Z-forward convention;
+- visibility changes affect all four renderers without recreating geometry;
+- telemetry session changes cannot clear or recreate the reference geometry;
+- EditMode tests cover geometry, invalid limits, axes, visibility, and renderer
+  count;
+- no files below `sender/camera` or `sender/slam` are changed;
+- Receiver and Protocol v1 behavior remain unchanged.
+
+Suggested branch:
+
+```text
+feature/51-unity-world-grid
 ```
 
 ## Local development order
