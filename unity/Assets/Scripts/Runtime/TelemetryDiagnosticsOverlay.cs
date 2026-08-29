@@ -37,10 +37,23 @@ namespace Slam.RemoteViewer
         private TelemetryDiagnosticsState state;
 
         public TelemetryDiagnosticsState State => state;
+        public Rect PanelRect => panelRect;
         public bool ShowOverlay
         {
             get => showOverlay;
             set => showOverlay = value;
+        }
+
+        public bool ContainsScreenPoint(Vector2 screenPoint, float screenHeight)
+        {
+            if (!showOverlay || !IsFinite(screenPoint.x) || !IsFinite(screenPoint.y) ||
+                !IsFinite(screenHeight) || screenHeight < 0f)
+            {
+                return false;
+            }
+
+            var guiPoint = new Vector2(screenPoint.x, screenHeight - screenPoint.y);
+            return panelRect.Contains(guiPoint);
         }
 
         private void Awake()
@@ -232,6 +245,11 @@ namespace Slam.RemoteViewer
                 default:
                     return Color.white;
             }
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
         }
     }
 }

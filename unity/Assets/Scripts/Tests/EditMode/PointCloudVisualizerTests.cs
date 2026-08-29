@@ -41,6 +41,26 @@ namespace Slam.RemoteViewer.Tests
         }
 
         [Test]
+        public void ParticleRendererBoundsContainEveryPoint()
+        {
+            visualizer.HandleMessage(PointCloudStateTests.Settings("session-a"));
+            visualizer.HandleMessage(PointCloudStateTests.Delta(
+                "session-a",
+                add: new System.Collections.Generic.IList<double>[]
+                {
+                    new double[] { 1, -20, 2, 3 },
+                    new double[] { 2, 30, -4, 5 }
+                }));
+
+            Bounds bounds = visualizer.ParticleSystemTarget
+                .GetComponent<ParticleSystemRenderer>()
+                .localBounds;
+
+            Assert.That(bounds.Contains(new Vector3(-20f, 2f, 3f)), Is.True);
+            Assert.That(bounds.Contains(new Vector3(30f, -4f, 5f)), Is.True);
+        }
+
+        [Test]
         public void NoOpDeltaDoesNotRebuildParticles()
         {
             visualizer.HandleMessage(PointCloudStateTests.Settings("session-a"));

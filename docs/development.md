@@ -82,6 +82,7 @@ An Issue is done when:
 - #39 Record telemetry sessions and export the final point cloud as PLY.
 - #42 Replay recorded telemetry sessions into Unity.
 - #45 Add a Unity telemetry diagnostics overlay.
+- #49 Add orbit, pan, and zoom controls to the Unity Viewer.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -561,6 +562,42 @@ Suggested branch:
 
 ```text
 feature/45-unity-telemetry-diagnostics
+```
+
+## Issue 49: Unity Viewer camera controls
+
+Goal: make the rendered pose, trajectory, and point cloud inspectable from any
+angle without changing the telemetry pipeline.
+
+Implemented behavior:
+
+- maintain orbit-camera position, rotation, focus, and limits in a testable
+  state model independent of Unity input APIs;
+- orbit with right-button drag, pan with middle-button drag, and zoom with the
+  mouse wheel;
+- reset the initial camera pose and focus point with `R`;
+- expose focus point, motion speeds, zoom amount, pitch limits, and distance
+  limits in the Inspector;
+- use unscaled frame time for orbit and pan motion;
+- ignore pointer-driven camera input while the pointer is over the visible
+  telemetry diagnostics panel;
+- attach the controller to `Main Camera` in the default Viewer scene.
+
+Acceptance criteria:
+
+- orbit preserves the focus point and camera distance;
+- pan moves the camera and focus point together;
+- zoom and pitch remain within configured limits;
+- reset restores the deterministic initial view;
+- the diagnostics panel blocks pointer interaction only while visible;
+- EditMode tests cover state transitions, limits, reset, input blocking, and
+  disabled-controller behavior;
+- no files below `sender/slam` are changed.
+
+Suggested branch:
+
+```text
+feature/49-unity-orbit-camera
 ```
 
 ## Local development order
