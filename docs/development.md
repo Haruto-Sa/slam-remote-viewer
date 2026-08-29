@@ -74,6 +74,7 @@ An Issue is done when:
 - #21 Audit the macOS SLAM host and pin the native toolchain.
 - #22 Define camera frame-source and calibration contracts.
 - #23 Implement a deterministic recorded monocular frame source.
+- #24 Implement a macOS live monocular camera source.
 - #32 Render the camera pose and frustum in Unity.
 - #34 Retain and render trajectory history in Unity.
 - #36 Apply and render point-cloud deltas in Unity.
