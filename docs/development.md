@@ -72,6 +72,7 @@ An Issue is done when:
 - #17 Define a backend-independent SLAM pose source interface.
 - #20 Implement the Unity background subscriber and main-thread queue.
 - #21 Audit the macOS SLAM host and pin the native toolchain.
+- #22 Define camera frame-source and calibration contracts.
 - #32 Render the camera pose and frustum in Unity.
 - #34 Retain and render trajectory history in Unity.
 - #36 Apply and render point-cloud deltas in Unity.
