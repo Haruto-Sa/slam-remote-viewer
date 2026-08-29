@@ -78,6 +78,7 @@ An Issue is done when:
 - #34 Retain and render trajectory history in Unity.
 - #36 Apply and render point-cloud deltas in Unity.
 - #39 Record telemetry sessions and export the final point cloud as PLY.
+- #42 Replay recorded telemetry sessions into Unity.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -480,6 +481,44 @@ Suggested branch:
 
 ```text
 feature/39-session-recording-ply
+```
+
+## Issue 42: Recorded telemetry session player
+
+Goal: replay Receiver recordings into Unity for deterministic offline
+inspection without a camera or SLAM backend.
+
+Implemented behavior:
+
+- provide a separate `slam-session-player` binary in the Receiver package;
+- load `metadata.json` and `telemetry.ndjson` from one recorded session;
+- require Protocol v1, `unity_world`, metres, a matching session, supported
+  topics, and Settings as the first message;
+- verify recorded message counts and reconstruct point-cloud deltas to verify
+  the final point count;
+- retain each payload's original JSON bytes and multipart topic;
+- preserve file order and derive playback timing from Pose and PointCloud
+  timestamps;
+- scale timing with a positive finite playback-speed multiplier;
+- clamp decreasing timestamps to the preceding message's playback time rather
+  than reordering messages;
+- wait after binding so Unity can subscribe before Settings is published;
+- support Ctrl-C while waiting and during playback;
+- include the input filename and line number in malformed-telemetry errors.
+
+Acceptance criteria:
+
+- a valid recording reproduces its trajectory and final point cloud in Unity;
+- playback preserves topic, payload, and recorded message order;
+- speed changes timing without modifying payloads;
+- truncated recordings and inconsistent final point counts are rejected;
+- tests require neither Unity nor camera/SLAM hardware;
+- no files below `sender/slam` are changed.
+
+Suggested branch:
+
+```text
+feature/42-telemetry-session-player
 ```
 
 ## Local development order
