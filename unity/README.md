@@ -47,3 +47,24 @@ Run EditMode tests in the Unity Test Runner, or in batch mode on macOS:
 ```
 
 Do not add `-quit`; the Unity Test Runner exits after writing its results.
+
+## Camera pose and frustum scene setup
+
+1. Open `Assets/Scenes/Viewer.unity`.
+2. Create an empty `Telemetry` GameObject.
+3. Add `TelemetrySubscriberBehaviour` and leave its endpoint at
+   `tcp://127.0.0.1:5556`.
+4. Add `CameraPoseVisualizer` to the same GameObject.
+5. Enter Play Mode after starting the Receiver and Mock Sender.
+
+`CameraPoseVisualizer` subscribes to the main-thread `MessageReceived` event.
+When its scene-object fields are empty, it creates a cube marker and a
+wireframe frustum automatically. Assign `Camera Pose Root` and `Frustum Line`
+in the Inspector only when replacing those defaults with custom objects.
+
+The visualization applies converted Protocol v1 `Twc` directly: `p` becomes
+the marker's world position and `[x, y, z, w]` becomes its world rotation.
+Settings establish the active session and camera aspect ratio. A new session
+resets and hides the previous pose; poses received before matching Settings are
+ignored. Marker and frustum colors indicate `tracking`, `initializing`, `lost`,
+and `relocalizing` states.

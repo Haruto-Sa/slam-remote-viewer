@@ -72,10 +72,10 @@ An Issue is done when:
 - #17 Define a backend-independent SLAM pose source interface.
 - #20 Implement the Unity background subscriber and main-thread queue.
 - #21 Audit the macOS SLAM host and pin the native toolchain.
+- #32 Render the camera pose and frustum in Unity.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Render camera pose and a camera frustum.
 - Retain and render trajectory history.
 - Apply and render point-cloud deltas.
 - Record sessions and export the final point cloud as PLY.
@@ -338,6 +338,39 @@ Suggested branch:
 
 ```text
 feature/20-unity-subscriber
+```
+
+## Issue 32: Unity camera pose and frustum
+
+Goal: visualize the latest Unity-coordinate camera pose without adding scene
+work to the network thread.
+
+Implemented behavior:
+
+- consume immutable Settings and Pose messages from the subscriber's
+  main-thread event;
+- apply Protocol v1 `Twc` position and `[x, y, z, w]` orientation to a camera
+  marker;
+- generate a wireframe frustum with a configurable vertical field of view,
+  depth, and line width;
+- derive the frustum aspect ratio from the Settings camera dimensions;
+- distinguish tracking states with configurable colors;
+- clear the previous pose when Settings establish a new session;
+- ignore poses received before Settings or for another session;
+- create default marker and frustum objects when scene references are empty.
+
+Acceptance criteria:
+
+- known position and rotation fixtures update the marker exactly;
+- the frustum matches the Settings aspect ratio;
+- a session change hides and resets the previous pose;
+- all scene changes occur on Unity's main thread;
+- EditMode tests cover geometry, pose application, and session handling.
+
+Suggested branch:
+
+```text
+feature/32-unity-camera-frustum
 ```
 
 ## Local development order
