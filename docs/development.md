@@ -70,11 +70,11 @@ An Issue is done when:
 - #13 Convert `slam_world` coordinates to `unity_world`.
 - #16 Republish converted telemetry to Unity over ZeroMQ.
 - #17 Define a backend-independent SLAM pose source interface.
+- #20 Implement the Unity background subscriber and main-thread queue.
 - #21 Audit the macOS SLAM host and pin the native toolchain.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Implement the Unity background subscriber and main-thread queue.
 - Render camera pose and a camera frustum.
 - Retain and render trajectory history.
 - Apply and render point-cloud deltas.
@@ -302,6 +302,42 @@ Suggested branch:
 
 ```text
 feature/17-slam-pose-source
+```
+
+## Issue 20: Unity background subscriber and main-thread queue
+
+Goal: receive converted Protocol v1 telemetry without blocking or calling Unity
+APIs outside the main thread.
+
+Implemented behavior:
+
+- initialize the Unity `6000.2.4f1` project and restore NetMQ through
+  NuGetForUnity;
+- connect a configurable SUB socket, defaulting to
+  `tcp://127.0.0.1:5556`, on a background thread;
+- subscribe to the `slam/v1/` prefix and require exactly two UTF-8 frames;
+- parse and validate settings, pose, and point-cloud JSON into immutable DTOs;
+- reject telemetry until matching `unity_world` settings establish the active
+  session;
+- transfer accepted messages through a bounded, thread-safe queue with a
+  deterministic drop-oldest overflow policy;
+- drain the queue and invoke consumers from Unity `Update` on the main thread;
+- cancel, join, and dispose the subscriber when its component is disabled.
+
+Acceptance criteria:
+
+- all three Protocol v1 topics reach the main-thread queue;
+- invalid topics, payloads, coordinate settings, and sessions are rejected;
+- a full queue remains bounded and reports dropped messages;
+- no Unity API is called from the subscriber thread;
+- startup and shutdown complete cleanly;
+- Unity EditMode tests cover parsing, session gating, overflow, live NetMQ
+  receipt, and shutdown.
+
+Suggested branch:
+
+```text
+feature/20-unity-subscriber
 ```
 
 ## Local development order
