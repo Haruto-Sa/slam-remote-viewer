@@ -320,6 +320,7 @@ GameObject:
   - component: {fileID: 1238453620}
   - component: {fileID: 1238453619}
   - component: {fileID: 1238453622}
+  - component: {fileID: 1238453623}
   m_Layer: 0
   m_Name: Telemetry
   m_TagString: Untagged
@@ -399,6 +400,24 @@ MonoBehaviour:
   lineWidth: 0.02
   minimumPointDistance: 0.02
   maximumPointCount: 10000
+--- !u!114 &1238453623
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238453618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20e2309b02eb0465980f688d187c6081, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Slam.RemoteViewer::Slam.RemoteViewer.PointCloudVisualizer
+  subscriber: {fileID: 0}
+  particleSystemTarget: {fileID: 0}
+  pointMaterial: {fileID: 0}
+  pointSize: 0.04
+  pointColor: {r: 0.9, g: 0.95, b: 1, a: 1}
+  showPointCloud: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

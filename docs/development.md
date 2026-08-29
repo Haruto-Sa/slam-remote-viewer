@@ -74,10 +74,10 @@ An Issue is done when:
 - #21 Audit the macOS SLAM host and pin the native toolchain.
 - #32 Render the camera pose and frustum in Unity.
 - #34 Retain and render trajectory history in Unity.
+- #36 Apply and render point-cloud deltas in Unity.
 
 Future work receives its number when the GitHub Issue is created:
 
-- Apply and render point-cloud deltas.
 - Record sessions and export the final point cloud as PLY.
 - Connect the real SLAM adapter.
 
@@ -406,6 +406,42 @@ Suggested branch:
 
 ```text
 feature/34-unity-trajectory
+```
+
+## Issue 36: Unity point-cloud deltas
+
+Goal: maintain persistent Protocol v1 point state and render it with a bounded
+number of Unity scene objects.
+
+Implemented behavior:
+
+- consume Settings and PointCloud messages from the subscriber's main-thread
+  event;
+- retain Unity-coordinate positions by point ID;
+- apply each delta in remove, update, then add order;
+- treat unknown updates as adds, duplicate adds as updates, and unknown removes
+  as no-ops;
+- clear point state and rendering when the session changes;
+- ignore deltas received before Settings or for another session;
+- sort positions by point ID for deterministic batched rendering;
+- render all points through one ParticleSystem instead of per-point
+  GameObjects;
+- skip render-data rebuilds when a delta does not change state;
+- expose material, color, size, and visibility in the Inspector.
+
+Acceptance criteria:
+
+- delta operations follow the Protocol v1 order and idempotent semantics;
+- a session change removes all previous points;
+- mismatched sessions do not mutate state;
+- rendering uses one ParticleSystem regardless of point count;
+- all scene changes occur on Unity's main thread;
+- EditMode tests cover delta semantics, reset, batching, and render updates.
+
+Suggested branch:
+
+```text
+feature/36-unity-point-cloud
 ```
 
 ## Local development order
