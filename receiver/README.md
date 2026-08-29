@@ -133,6 +133,44 @@ after a successful flush. File errors include the failed operation and path;
 the Receiver exits unsuccessfully when requested recording cannot be
 finalized.
 
+## Replay a recorded session into Unity
+
+Start the Unity Viewer and enter Play Mode so its subscriber is connected.
+Do not run `slam-receiver` at the same time: the Receiver and session player
+both bind the default Unity endpoint.
+
+In another terminal, run:
+
+```bash
+cargo run \
+  --manifest-path receiver/Cargo.toml \
+  --bin slam-session-player \
+  -- \
+  --session-dir recordings/receiver-test \
+  --speed 1.0
+```
+
+The player binds `tcp://127.0.0.1:5556`, waits 500 milliseconds for Unity's
+subscription handshake, publishes Settings first, and then reproduces Pose and
+PointCloud timing. `--speed 2.0` plays twice as fast; `--speed 0.5` plays at
+half speed. Use `--endpoint` and `--startup-delay-ms` to override the endpoint
+or initial wait.
+
+Before opening the socket, the player validates:
+
+- the metadata protocol version, session, unit, frame, and safe filenames;
+- every NDJSON object, supported topic, payload shape, session, and fixed
+  Protocol v1 values;
+- Settings appears first;
+- message, Pose, and PointCloud counts match metadata;
+- replaying all point-cloud deltas produces the metadata final point count.
+
+Payload JSON is published exactly as stored, without coordinate conversion or
+reserialization. Recorded order is never changed. If timestamps decrease, the
+later message is sent immediately after the preceding scheduled message.
+Malformed telemetry errors identify `telemetry.ndjson` and its line number.
+Ctrl-C interrupts both the startup wait and timed playback cleanly.
+
 ## Validation behavior
 
 A received message is rejected without terminating the process when:
