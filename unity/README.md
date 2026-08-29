@@ -82,3 +82,15 @@ segment. A new Settings session clears all retained points and segments.
 `Minimum Point Distance` controls spatial downsampling, while `Maximum Point
 Count` bounds memory and removes the oldest positions first. Line material,
 color, and width are configurable in the Inspector.
+
+## Point-cloud deltas
+
+Add `PointCloudVisualizer` to the `Telemetry` GameObject. Its Particle System
+field may remain empty; the component creates one `Point Cloud` child and
+renders every retained point through that single ParticleSystem.
+
+Point IDs persist across delta messages. Operations are applied in Protocol v1
+order: remove, update, then add. An unknown update adds the point, an existing
+add updates it, and an unknown remove is ignored. A new Settings session clears
+all point state and particles. Point material, color, size, and visibility are
+configurable in the Inspector.
