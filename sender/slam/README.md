@@ -110,7 +110,8 @@ frames and application queue overflow. `RequestStop()` cancels a waiting
 consumer, and `Stop()` drains the callback queue before releasing capture
 objects.
 
-On the host audited for Issue #24, `macos_camera_dump --list` reports
-`authorization=denied` and no devices. Compilation, lifecycle, bounded-queue,
-and disposal behavior are covered without hardware, but actual frame receipt
-must be verified after camera access/device visibility is restored.
+Issue #24 was verified after explicitly granting camera access. The built-in
+FaceTime HD camera delivered ten BGR8 frames at negotiated `1280x720@30` with
+monotonic IDs and timestamps, zero reported drops, and clean finite shutdown.
+The diagnostic also enumerated a Continuity Camera without persisting either
+device's machine-specific unique ID in the repository.

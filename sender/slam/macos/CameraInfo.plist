@@ -8,5 +8,7 @@
     <string>SLAM Camera Diagnostic</string>
     <key>NSCameraUsageDescription</key>
     <string>Capture camera frames for local SLAM processing and diagnostics.</string>
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
 </dict>
 </plist>

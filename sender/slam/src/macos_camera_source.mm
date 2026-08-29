@@ -27,7 +27,10 @@ std::string ToString(NSString* value) {
 }
 
 NSArray<AVCaptureDeviceType>* CameraDeviceTypes() {
-    return @[ AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternal ];
+    return @[
+        AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternal,
+        AVCaptureDeviceTypeContinuityCamera
+    ];
 }
 
 AVCaptureDevice* FindDevice(const std::string& device_id) {
