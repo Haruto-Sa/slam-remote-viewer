@@ -2,6 +2,7 @@ pub mod coordinates;
 pub mod protocol;
 pub mod publisher;
 pub mod quaternion;
+pub mod recording;
 
 use std::fmt;
 

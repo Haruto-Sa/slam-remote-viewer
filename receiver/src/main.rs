@@ -1,5 +1,6 @@
 use std::{
     error::Error,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -15,6 +16,7 @@ use slam_receiver::{
     protocol::{TelemetryMessage, parse_telemetry},
     publisher::{EncodedTelemetry, SettingsRepeater, encode_telemetry, publish_encoded},
     quaternion::QuaternionContinuity,
+    recording::{SessionGate, TelemetryRecorder},
 };
 
 const DEFAULT_INPUT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
@@ -36,6 +38,10 @@ struct Cli {
     /// Local ZeroMQ PUB endpoint to bind for Unity
     #[arg(long, default_value = DEFAULT_OUTPUT_ENDPOINT)]
     output_endpoint: String,
+
+    /// Directory in which accepted telemetry sessions are recorded
+    #[arg(long)]
+    record_dir: Option<PathBuf>,
 }
 
 fn main() {
@@ -70,6 +76,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("receiver connected to {}", cli.endpoint);
     println!("subscribed to {PROTOCOL_V1_TOPIC_PREFIX}");
     println!("publishing Unity telemetry to {}", cli.output_endpoint);
+    if let Some(record_dir) = &cli.record_dir {
+        println!(
+            "recording telemetry sessions under {}",
+            record_dir.display()
+        );
+    }
     println!("press Ctrl-C to stop");
 
     let mut received_count = 0_u64;
@@ -78,6 +90,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut publication_failed_count = 0_u64;
     let mut quaternion_continuity = QuaternionContinuity::new();
     let mut settings_repeater = SettingsRepeater::new(SETTINGS_REPEAT_INTERVAL);
+    let mut session_gate = SessionGate::new();
+    let recorder = cli.record_dir.map(TelemetryRecorder::start);
 
     while running.load(Ordering::SeqCst) {
         if let Some(settings) = settings_repeater.take_due(Instant::now()) {
@@ -99,6 +113,17 @@ fn run() -> Result<(), Box<dyn Error>> {
         match decode_multipart(&frames) {
             Ok(packet) => match parse_telemetry(&packet.topic, &packet.payload) {
                 Ok(mut message) => {
+                    if let Err(error) = session_gate.accept(&message) {
+                        rejected_count += 1;
+                        eprintln!(
+                            "rejected telemetry: topic={} session={} seq={} reason={error}",
+                            message.topic(),
+                            message.session(),
+                            format_seq(message.seq())
+                        );
+                        continue;
+                    }
+
                     if let Err(error) =
                         prepare_telemetry_for_unity(&mut message, &mut quaternion_continuity)
                     {
@@ -115,6 +140,10 @@ fn run() -> Result<(), Box<dyn Error>> {
 
                     received_count += 1;
                     log_received(&message);
+
+                    if let Some(recorder) = &recorder {
+                        recorder.record(&message)?;
+                    }
 
                     match encode_telemetry(&message) {
                         Ok(telemetry) => {
@@ -146,6 +175,21 @@ fn run() -> Result<(), Box<dyn Error>> {
                 rejected_count += 1;
                 eprintln!("rejected multipart message: {error}");
             }
+        }
+    }
+
+    if let Some(recorder) = recorder {
+        for summary in recorder.finish()? {
+            println!(
+                "recording finalized: session={} messages={} poses={} pointcloud_messages={} \
+                 points={} directory={}",
+                summary.session,
+                summary.message_count,
+                summary.pose_count,
+                summary.pointcloud_message_count,
+                summary.point_count,
+                summary.directory.display()
+            );
         }
     }
 
@@ -207,6 +251,7 @@ mod tests {
         let cli = Cli::parse_from(["slam-receiver"]);
         assert_eq!(cli.endpoint, DEFAULT_INPUT_ENDPOINT);
         assert_eq!(cli.output_endpoint, DEFAULT_OUTPUT_ENDPOINT);
+        assert_eq!(cli.record_dir, None);
     }
 
     #[test]
@@ -221,5 +266,12 @@ mod tests {
         let cli = Cli::parse_from(["slam-receiver", "--output-endpoint", "tcp://127.0.0.1:6000"]);
 
         assert_eq!(cli.output_endpoint, "tcp://127.0.0.1:6000");
+    }
+
+    #[test]
+    fn parses_recording_directory() {
+        let cli = Cli::parse_from(["slam-receiver", "--record-dir", "recordings/demo"]);
+
+        assert_eq!(cli.record_dir, Some(PathBuf::from("recordings/demo")));
     }
 }

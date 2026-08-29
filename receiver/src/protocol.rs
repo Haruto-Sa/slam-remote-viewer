@@ -8,7 +8,7 @@ pub const POINTCLOUD_TOPIC: &str = "slam/v1/pointcloud";
 
 pub const MAX_POINT_ID: u64 = 9_007_199_254_740_991;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SettingsMessage {
     pub v: u32,
     pub session: String,
@@ -20,7 +20,7 @@ pub struct SettingsMessage {
     pub pointcloud_mode: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CameraSettings {
     #[serde(rename = "type")]
     pub camera_type: String,
@@ -30,7 +30,7 @@ pub struct CameraSettings {
     pub fps: u32,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct PoseMessage {
     pub v: u32,
     pub session: String,
@@ -41,7 +41,7 @@ pub struct PoseMessage {
     pub state: PoseState,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PoseState {
     Initializing,
@@ -52,7 +52,7 @@ pub enum PoseState {
 
 pub type PointEntry = (u64, f64, f64, f64);
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct PointCloudMessage {
     pub v: u32,
     pub session: String,
@@ -203,7 +203,7 @@ impl PointCloudMessage {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TelemetryMessage {
     Settings(SettingsMessage),
     Pose(PoseMessage),
