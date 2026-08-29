@@ -27,3 +27,4 @@ __pycache__/
 /sender/slam/build/
 /sender/slam/calibration/*.calibration
 !/sender/slam/calibration/example.calibration
+/sender/slam/orbslam3/work/

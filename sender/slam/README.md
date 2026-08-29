@@ -154,3 +154,12 @@ not committed.
 The generated YAML uses BGR input (`Camera.RGB: 0`) and explicit ORB extractor
 defaults. Review feature settings during the ORB-SLAM3 dataset Issue; calibration
 conversion does not claim that the defaults are optimal for every camera.
+
+## ORB-SLAM3 dependency build
+
+On Apple Silicon, use `tools/bootstrap-orbslam3-macos.sh` from the repository
+root. It creates a disposable native arm64 dependency graph outside the
+repository, checks out the revisions in `orbslam3/dependencies.lock.sh`, and
+verifies that the resulting libraries do not link against Intel Homebrew. The
+upstream checkout and build products are intentionally not CMake targets of this
+camera-contract project.
