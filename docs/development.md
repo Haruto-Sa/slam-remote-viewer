@@ -85,6 +85,7 @@ An Issue is done when:
 - #49 Add orbit, pan, and zoom controls to the Unity Viewer.
 - #51 Add a configurable world grid and axis reference to the Unity Viewer.
 - #53 Add visualization visibility controls to the Unity Viewer.
+- #54 Add four cardinal camera view presets to the Unity Viewer.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -673,6 +674,40 @@ Suggested branch:
 
 ```text
 feature/53-unity-visibility-controls
+```
+
+## Issue 54: Unity cardinal camera view presets
+
+Goal: inspect telemetry geometry from four deterministic horizontal side views
+using the number keys.
+
+Implemented behavior:
+
+- select the front view from negative Z with `1`;
+- select the right view from positive X with `2`;
+- select the back view from positive Z with `3`;
+- select the left view from negative X with `4`;
+- preserve the current orbit focus point and camera distance;
+- reset pitch to zero and set an absolute yaw without accumulating rotation
+  error;
+- retain orbit, pan, zoom, diagnostics input blocking, and `R` reset behavior;
+- expose all four preset keys in the Inspector.
+
+Acceptance criteria:
+
+- all presets look directly at the current focus point at the retained distance;
+- applying a preset repeatedly produces the same position and rotation;
+- orbit, pan, zoom, and reset continue to operate after preset selection;
+- preset selection changes only the Viewer camera and no telemetry state;
+- EditMode tests cover directions, retained focus and distance, overlay input,
+  reset, repeated selection, and controller transform application;
+- no files below `sender/camera` or `sender/slam` are changed;
+- Receiver and Protocol v1 behavior remain unchanged.
+
+Suggested branch:
+
+```text
+feature/54-unity-cardinal-views
 ```
 
 ## Local development order
