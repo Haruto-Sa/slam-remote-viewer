@@ -47,6 +47,25 @@ namespace Slam.RemoteViewer
         [SerializeField]
         private KeyCode leftViewKey = KeyCode.Alpha4;
 
+        [Header("Frame visible telemetry")]
+        [SerializeField]
+        private Camera viewerCamera;
+
+        [SerializeField]
+        private CameraPoseVisualizer cameraPoseVisualizer;
+
+        [SerializeField]
+        private CameraTrajectoryVisualizer trajectoryVisualizer;
+
+        [SerializeField]
+        private PointCloudVisualizer pointCloudVisualizer;
+
+        [SerializeField]
+        private KeyCode frameAllKey = KeyCode.F;
+
+        [SerializeField, Min(1f)]
+        private float framingPadding = 1.1f;
+
         [Header("Input blocking")]
         [SerializeField]
         private TelemetryDiagnosticsOverlay diagnosticsOverlay;
@@ -75,6 +94,9 @@ namespace Slam.RemoteViewer
             orbitSpeedDegreesPerSecond = Mathf.Max(0f, orbitSpeedDegreesPerSecond);
             panSpeedUnitsPerSecond = Mathf.Max(0f, panSpeedUnitsPerSecond);
             zoomUnitsPerScroll = Mathf.Max(0f, zoomUnitsPerScroll);
+            framingPadding = float.IsNaN(framingPadding) || float.IsInfinity(framingPadding)
+                ? 1.1f
+                : Mathf.Max(1f, framingPadding);
         }
 
         public bool ApplyCommand(OrbitCameraCommand command, float unscaledDeltaTime)
@@ -107,9 +129,26 @@ namespace Slam.RemoteViewer
             return changed;
         }
 
+        public bool FrameVisibleTelemetry()
+        {
+            if (!TryBuildFrameRequest(out OrbitCameraFrameRequest request))
+            {
+                return false;
+            }
+
+            return ApplyCommand(
+                new OrbitCameraCommand(
+                    Vector2.zero,
+                    Vector2.zero,
+                    0f,
+                    frameRequest: request),
+                0f);
+        }
+
         private void Initialize()
         {
             OnValidate();
+            ResolveFrameSources();
             state = new OrbitCameraState(
                 transform.position,
                 focusPoint,
@@ -132,6 +171,12 @@ namespace Slam.RemoteViewer
                 ? new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"))
                 : Vector2.zero;
             OrbitCameraViewPreset? viewPreset = ReadViewPreset();
+            OrbitCameraFrameRequest? frameRequest = null;
+            if (Input.GetKeyDown(frameAllKey) &&
+                TryBuildFrameRequest(out OrbitCameraFrameRequest request))
+            {
+                frameRequest = request;
+            }
 
             return new OrbitCameraCommand(
                 orbit,
@@ -139,7 +184,8 @@ namespace Slam.RemoteViewer
                 Input.mouseScrollDelta.y,
                 Input.GetKeyDown(resetKey),
                 blocked,
-                viewPreset);
+                viewPreset,
+                frameRequest);
         }
 
         private OrbitCameraViewPreset? ReadViewPreset()
@@ -161,6 +207,82 @@ namespace Slam.RemoteViewer
                 return OrbitCameraViewPreset.Left;
             }
             return null;
+        }
+
+        private void ResolveFrameSources()
+        {
+            if (viewerCamera == null)
+            {
+                viewerCamera = GetComponent<Camera>();
+            }
+            if (cameraPoseVisualizer == null)
+            {
+                cameraPoseVisualizer = GetComponent<CameraPoseVisualizer>();
+            }
+            if (trajectoryVisualizer == null)
+            {
+                trajectoryVisualizer = GetComponent<CameraTrajectoryVisualizer>();
+            }
+            if (pointCloudVisualizer == null)
+            {
+                pointCloudVisualizer = GetComponent<PointCloudVisualizer>();
+            }
+        }
+
+        private bool TryBuildFrameRequest(out OrbitCameraFrameRequest request)
+        {
+            ResolveFrameSources();
+            var accumulator = new TelemetryBoundsAccumulator();
+            AddVisibleBounds(cameraPoseVisualizer, accumulator);
+            AddVisibleBounds(trajectoryVisualizer, accumulator);
+            AddVisibleBounds(pointCloudVisualizer, accumulator);
+
+            if (viewerCamera == null || !accumulator.TryGetBounds(out Bounds bounds))
+            {
+                request = default;
+                return false;
+            }
+
+            request = new OrbitCameraFrameRequest(
+                bounds,
+                viewerCamera.fieldOfView,
+                viewerCamera.aspect,
+                framingPadding,
+                viewerCamera.nearClipPlane);
+            return true;
+        }
+
+        private static void AddVisibleBounds(
+            CameraPoseVisualizer visualizer,
+            TelemetryBoundsAccumulator accumulator)
+        {
+            if (visualizer != null && visualizer.IsVisible &&
+                visualizer.TryGetWorldBounds(out Bounds bounds))
+            {
+                accumulator.Add(bounds);
+            }
+        }
+
+        private static void AddVisibleBounds(
+            CameraTrajectoryVisualizer visualizer,
+            TelemetryBoundsAccumulator accumulator)
+        {
+            if (visualizer != null && visualizer.IsVisible &&
+                visualizer.TryGetWorldBounds(out Bounds bounds))
+            {
+                accumulator.Add(bounds);
+            }
+        }
+
+        private static void AddVisibleBounds(
+            PointCloudVisualizer visualizer,
+            TelemetryBoundsAccumulator accumulator)
+        {
+            if (visualizer != null && visualizer.IsVisible &&
+                visualizer.TryGetWorldBounds(out Bounds bounds))
+            {
+                accumulator.Add(bounds);
+            }
         }
 
         private void ApplyPose()

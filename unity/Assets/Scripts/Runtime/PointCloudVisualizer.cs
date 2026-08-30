@@ -124,6 +124,22 @@ namespace Slam.RemoteViewer
             }
         }
 
+        public bool TryGetWorldBounds(out Bounds bounds)
+        {
+            if (orderedPositions.Count == 0)
+            {
+                bounds = default;
+                return false;
+            }
+
+            bounds = new Bounds(orderedPositions[0], Vector3.zero);
+            for (var index = 1; index < orderedPositions.Count; index++)
+            {
+                bounds.Encapsulate(orderedPositions[index]);
+            }
+            return true;
+        }
+
         private void Initialize()
         {
             state = new PointCloudState();

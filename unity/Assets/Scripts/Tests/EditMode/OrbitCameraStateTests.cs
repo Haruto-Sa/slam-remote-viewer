@@ -204,6 +204,70 @@ namespace Slam.RemoteViewer.Tests
         }
 
         [Test]
+        public void FrameBoundsCentersAndFitsGeometryWhilePreservingDirection()
+        {
+            OrbitCameraState state = CreateState();
+            state.Orbit(30f, 15f);
+            Quaternion initialRotation = state.Rotation;
+            var bounds = new Bounds(
+                new Vector3(5f, 2f, 3f),
+                new Vector3(4f, 2f, 6f));
+
+            bool changed = state.FrameBounds(bounds, 60f, 16f / 9f, 1.1f, 0.3f);
+
+            Assert.That(changed, Is.True);
+            AssertVector(state.FocusPoint, bounds.center);
+            Assert.That(
+                Quaternion.Angle(state.Rotation, initialRotation),
+                Is.LessThan(0.0001f));
+            AssertBoundsFit(state, bounds, 60f, 16f / 9f, 1.1f, 0.3f);
+        }
+
+        [Test]
+        public void FrameBoundsRespectsDistanceLimits()
+        {
+            OrbitCameraState state = CreateState();
+
+            state.FrameBounds(
+                new Bounds(new Vector3(4f, 5f, 6f), Vector3.zero),
+                60f,
+                1f,
+                1f,
+                0.3f);
+            Assert.That(state.Distance, Is.EqualTo(2f));
+
+            state.FrameBounds(
+                new Bounds(Vector3.zero, Vector3.one * 1000f),
+                60f,
+                1f,
+                1f,
+                0.3f);
+            Assert.That(state.Distance, Is.EqualTo(20f));
+        }
+
+        [Test]
+        public void RepeatedFramingDoesNotAccumulateError()
+        {
+            OrbitCameraState state = CreateState();
+            var bounds = new Bounds(new Vector3(3f, 2f, 1f), new Vector3(6f, 4f, 2f));
+            state.FrameBounds(bounds, 70f, 1.5f, 1.2f, 0.3f);
+            Vector3 expectedPosition = state.Position;
+            Quaternion expectedRotation = state.Rotation;
+            float expectedDistance = state.Distance;
+
+            for (var index = 0; index < 100; index++)
+            {
+                Assert.That(state.FrameBounds(bounds, 70f, 1.5f, 1.2f, 0.3f), Is.False);
+            }
+
+            AssertVector(state.Position, expectedPosition);
+            Assert.That(state.Distance, Is.EqualTo(expectedDistance).Within(0.0001f));
+            Assert.That(
+                Quaternion.Angle(state.Rotation, expectedRotation),
+                Is.LessThan(0.0001f));
+        }
+
+        [Test]
         public void RejectsInvalidConstructionAndCommandValues()
         {
             Assert.Throws<ArgumentException>(() => new OrbitCameraState(
@@ -225,6 +289,12 @@ namespace Slam.RemoteViewer.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => state.Zoom(float.NaN));
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 state.SetViewPreset((OrbitCameraViewPreset)999));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                state.FrameBounds(new Bounds(), 0f, 1f, 1f, 0.3f));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                state.FrameBounds(new Bounds(), 60f, 0f, 1f, 0.3f));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                state.FrameBounds(new Bounds(), 60f, 1f, 0.9f, 0.3f));
         }
 
         private static OrbitCameraState CreateState()
@@ -241,6 +311,42 @@ namespace Slam.RemoteViewer.Tests
         private static void AssertVector(Vector3 actual, Vector3 expected)
         {
             Assert.That(Vector3.Distance(actual, expected), Is.LessThan(0.0001f));
+        }
+
+        private static void AssertBoundsFit(
+            OrbitCameraState state,
+            Bounds bounds,
+            float verticalFieldOfViewDegrees,
+            float aspectRatio,
+            float padding,
+            float nearClipDistance)
+        {
+            float verticalTangent = Mathf.Tan(
+                verticalFieldOfViewDegrees * 0.5f * Mathf.Deg2Rad);
+            float horizontalTangent = verticalTangent * aspectRatio;
+            Quaternion inverseRotation = Quaternion.Inverse(state.Rotation);
+            Vector3 extents = bounds.extents;
+            for (var xSign = -1; xSign <= 1; xSign += 2)
+            {
+                for (var ySign = -1; ySign <= 1; ySign += 2)
+                {
+                    for (var zSign = -1; zSign <= 1; zSign += 2)
+                    {
+                        Vector3 corner = bounds.center + new Vector3(
+                            extents.x * xSign,
+                            extents.y * ySign,
+                            extents.z * zSign);
+                        Vector3 cameraSpace = inverseRotation * (corner - state.Position);
+                        Assert.That(cameraSpace.z, Is.GreaterThanOrEqualTo(nearClipDistance - 0.0001f));
+                        Assert.That(
+                            Mathf.Abs(cameraSpace.x) * padding,
+                            Is.LessThanOrEqualTo(cameraSpace.z * horizontalTangent + 0.0001f));
+                        Assert.That(
+                            Mathf.Abs(cameraSpace.y) * padding,
+                            Is.LessThanOrEqualTo(cameraSpace.z * verticalTangent + 0.0001f));
+                    }
+                }
+            }
         }
     }
 }

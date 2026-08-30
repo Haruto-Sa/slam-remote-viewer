@@ -387,6 +387,12 @@ MonoBehaviour:
   rightViewKey: 50
   backViewKey: 51
   leftViewKey: 52
+  viewerCamera: {fileID: 988585369}
+  cameraPoseVisualizer: {fileID: 1238453619}
+  trajectoryVisualizer: {fileID: 1238453622}
+  pointCloudVisualizer: {fileID: 1238453623}
+  frameAllKey: 102
+  framingPadding: 1.1
   diagnosticsOverlay: {fileID: 1238453624}
 --- !u!1 &1238453618
 GameObject:

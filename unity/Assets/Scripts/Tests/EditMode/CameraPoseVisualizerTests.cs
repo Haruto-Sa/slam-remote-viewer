@@ -139,6 +139,21 @@ namespace Slam.RemoteViewer.Tests
             Assert.That(visualizer.FrustumLine.GetInstanceID(), Is.EqualTo(frustumId));
         }
 
+        [Test]
+        public void ReportsRetainedPoseWorldBoundsWhileHidden()
+        {
+            visualizer.HandleMessage(Settings("session-a", 1280, 720));
+            visualizer.HandleMessage(Pose(
+                "session-a",
+                new[] { 4.0, 5.0, 6.0 },
+                new[] { 0.0, 0.0, 0.0, 1.0 }));
+            visualizer.SetVisible(false);
+
+            Assert.That(visualizer.TryGetWorldBounds(out Bounds bounds), Is.True);
+            AssertVector(bounds.center, new Vector3(4f, 5f, 6f));
+            AssertVector(bounds.size, Vector3.zero);
+        }
+
         private static SettingsMessage Settings(string session, uint width, uint height)
         {
             return new SettingsMessage(

@@ -86,6 +86,7 @@ An Issue is done when:
 - #51 Add a configurable world grid and axis reference to the Unity Viewer.
 - #53 Add visualization visibility controls to the Unity Viewer.
 - #54 Add four cardinal camera view presets to the Unity Viewer.
+- #57 Add frame-all telemetry camera control to the Unity Viewer.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -708,6 +709,46 @@ Suggested branch:
 
 ```text
 feature/54-unity-cardinal-views
+```
+
+## Issue 57: Unity frame-all telemetry control
+
+Goal: center and fit all currently visible retained telemetry geometry with one
+Viewer shortcut.
+
+Implemented behavior:
+
+- expose world-space bounds from retained camera pose, trajectory, and
+  point-cloud state;
+- aggregate only visualizers whose current visibility is enabled;
+- exclude the world grid and axes from framing bounds;
+- frame available bounds with `F` while preserving the current camera yaw and
+  pitch;
+- calculate the required orbit distance from camera field of view, aspect
+  ratio, near clip distance, and configurable padding;
+- clamp the result to the existing orbit distance limits;
+- leave camera and telemetry unchanged when no visible bounds are available;
+- expose the frame shortcut, padding, camera, and optional visualizer references
+  in the Inspector.
+
+Acceptance criteria:
+
+- bounds center becomes the orbit focus point and all corners fit when the
+  configured maximum distance permits it;
+- hidden layers and the world reference are excluded;
+- empty and missing visualizers are handled safely;
+- repeated framing is deterministic;
+- existing orbit, pan, zoom, presets, reset, and visibility shortcuts continue
+  to work;
+- EditMode tests cover source bounds, aggregation, projection fit, distance
+  limits, hidden layers, empty state, invalid configuration, and repetition;
+- no files below `sender/camera` or `sender/slam` are changed;
+- Receiver and Protocol v1 behavior remain unchanged.
+
+Suggested branch:
+
+```text
+feature/57-unity-frame-all
 ```
 
 ## Local development order
