@@ -563,6 +563,38 @@ Suggested branch:
 feature/45-unity-telemetry-diagnostics
 ```
 
+## Issue 57: Reduce SLAM point-cloud telemetry on the Intel Mac sender
+
+Goal: minimize live point-cloud traffic before Protocol v1 serialization while
+preserving stable map-point identity and a recognizable visualization.
+
+Implemented behavior:
+
+- accept backend-independent snapshots containing stable point IDs and metre
+  coordinates;
+- deterministically retain the lowest point ID in each configurable voxel;
+- cap retained points and report voxel and capacity filtering statistics;
+- emit only Protocol v1-compatible add, update, and remove operations;
+- suppress small updates relative to the last transmitted position, while
+  accumulating movement until it crosses the configured threshold;
+- clear retained state on SLAM session reset so the next snapshot is complete;
+- reject duplicate IDs, non-finite coordinates, and IDs outside the Protocol v1
+  JSON-safe integer range.
+
+Acceptance criteria:
+
+- unchanged and sub-threshold snapshots produce no telemetry operations;
+- output ordering and voxel selection are deterministic regardless of input order;
+- removal, representative changes, capacity limits, and reset are tested;
+- ORB-SLAM3 types remain outside this reusable reduction layer;
+- the existing camera and calibration tests remain successful.
+
+Suggested branch:
+
+```text
+feature/57-intel-mac-pointcloud-delta
+```
+
 ## Local development order
 
 Run and verify components from left to right:

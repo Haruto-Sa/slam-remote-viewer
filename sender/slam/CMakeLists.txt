@@ -25,6 +25,10 @@ add_library(slam_calibration_io src/calibration_io.cpp)
 add_library(slam::calibration_io ALIAS slam_calibration_io)
 target_link_libraries(slam_calibration_io PUBLIC slam::camera_contracts)
 
+add_library(slam_point_cloud_delta_reducer src/point_cloud_delta_reducer.cpp)
+add_library(slam::point_cloud_delta_reducer ALIAS slam_point_cloud_delta_reducer)
+target_link_libraries(slam_point_cloud_delta_reducer PUBLIC slam::camera_contracts)
+
 add_executable(recorded_frame_dump tools/recorded_frame_dump.cpp)
 target_link_libraries(recorded_frame_dump PRIVATE slam::recorded_frame_source)
 
@@ -36,6 +40,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(recorded_frame_dump PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(
+        slam_point_cloud_delta_reducer PRIVATE -Wall -Wextra -Wpedantic -Werror
+    )
 endif()
 
 if(APPLE)
@@ -101,4 +108,15 @@ if(SLAM_BUILD_TESTS)
         target_compile_options(calibration_io_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME calibration_io_tests COMMAND calibration_io_tests)
+
+    add_executable(point_cloud_delta_reducer_tests tests/point_cloud_delta_reducer_tests.cpp)
+    target_link_libraries(
+        point_cloud_delta_reducer_tests PRIVATE slam::point_cloud_delta_reducer
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(
+            point_cloud_delta_reducer_tests PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME point_cloud_delta_reducer_tests COMMAND point_cloud_delta_reducer_tests)
 endif()
