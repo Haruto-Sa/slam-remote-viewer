@@ -65,7 +65,7 @@ if(SLAM_ENABLE_ORB_SLAM3)
         PRIVATE
             Eigen3::Eigen
             Boost::serialization
-            pango_core
+            ${Pangolin_LIBRARIES}
             GLEW::GLEW
             opencv_core
             "${SLAM_ORB_SLAM3_ROOT}/lib/libORB_SLAM3.dylib"
@@ -73,6 +73,7 @@ if(SLAM_ENABLE_ORB_SLAM3)
     if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
         target_compile_options(slam_orbslam3_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
+
 endif()
 
 add_executable(recorded_frame_dump tools/recorded_frame_dump.cpp)
@@ -117,6 +118,26 @@ if(APPLE)
         PRIVATE
             "SHELL:-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/macos/CameraInfo.plist"
     )
+
+    if(SLAM_ENABLE_ORB_SLAM3)
+        add_executable(macos_orbslam3_live tools/macos_orbslam3_live.cpp)
+        target_link_libraries(
+            macos_orbslam3_live
+            PRIVATE
+                slam::macos_camera_source
+                slam::calibration_io
+                slam::orbslam3_adapter
+                slam::point_cloud_delta_reducer
+        )
+        target_compile_options(
+            macos_orbslam3_live PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+        target_link_options(
+            macos_orbslam3_live
+            PRIVATE
+                "SHELL:-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/macos/CameraInfo.plist"
+        )
+    endif()
 
     if(SLAM_BUILD_TESTS)
         add_executable(macos_camera_source_tests tests/macos_camera_source_tests.cpp)

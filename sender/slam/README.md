@@ -163,3 +163,18 @@ repository, checks out the revisions in `orbslam3/dependencies.lock.sh`, and
 verifies that the resulting libraries do not link against Intel Homebrew. The
 upstream checkout and build products are intentionally not CMake targets of this
 camera-contract project.
+
+### Live camera diagnostics
+
+After building with `SLAM_ENABLE_ORB_SLAM3=ON`, run the local Pangolin diagnostic
+path with the calibration source document, its generated ORB settings YAML, and
+the expanded vocabulary:
+
+```bash
+./macos_orbslam3_live CAMERA.calibration CAMERA.yaml ORBvoc.txt
+```
+
+The process continuously captures frames until Ctrl-C. It prints tracking and
+point-reduction counters but neither records raw images nor publishes telemetry.
+Network publishing is intentionally a separate task so camera/SLAM failures can
+be diagnosed locally first.

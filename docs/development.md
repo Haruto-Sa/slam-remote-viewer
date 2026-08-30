@@ -638,6 +638,27 @@ Suggested branch:
 feature/intel-mac-orbslam3-monocular-tracker
 ```
 
+## Intel Mac task IM-SLAM-04: Live ORB-SLAM3 diagnostics
+
+Goal: verify the complete local camera and SLAM path with Pangolin before adding
+network publishing.
+
+Implemented behavior:
+
+- load the validated camera calibration and start its matching macOS device;
+- feed every captured frame to the monocular ORB-SLAM3 tracker;
+- enable ORB-SLAM3's Pangolin viewer for local visual confirmation;
+- reduce tracked points at 5 Hz instead of building an unbounded output queue;
+- report tracking state, pose availability, point operations, filtering, and
+  camera frame drops without logging image data;
+- stop camera capture and ORB-SLAM3 worker threads cleanly on Ctrl-C.
+
+Suggested branch:
+
+```text
+feature/intel-mac-live-orbslam3-diagnostics
+```
+
 ## Local development order
 
 Run and verify components from left to right:
