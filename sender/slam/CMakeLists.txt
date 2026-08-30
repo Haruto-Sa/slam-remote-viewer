@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 
 project(slam_camera_contracts VERSION 0.1.0 LANGUAGES CXX)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 option(SLAM_BUILD_TESTS "Build SLAM adapter contract tests" ON)
+option(SLAM_ENABLE_ORB_SLAM3 "Build the optional ORB-SLAM3 adapter" OFF)
+set(SLAM_ORB_SLAM3_ROOT "" CACHE PATH "Path to a patched ORB-SLAM3 source tree")
 if(SLAM_BUILD_TESTS)
     enable_testing()
 endif()
@@ -28,6 +34,42 @@ target_link_libraries(slam_calibration_io PUBLIC slam::camera_contracts)
 add_library(slam_point_cloud_delta_reducer src/point_cloud_delta_reducer.cpp)
 add_library(slam::point_cloud_delta_reducer ALIAS slam_point_cloud_delta_reducer)
 target_link_libraries(slam_point_cloud_delta_reducer PUBLIC slam::camera_contracts)
+
+if(SLAM_ENABLE_ORB_SLAM3)
+    if(NOT IS_DIRECTORY "${SLAM_ORB_SLAM3_ROOT}")
+        message(FATAL_ERROR "SLAM_ORB_SLAM3_ROOT must name an ORB-SLAM3 source tree")
+    endif()
+    find_package(OpenCV 4 REQUIRED COMPONENTS core)
+    find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+    find_package(Boost 1.70 REQUIRED COMPONENTS serialization)
+    find_package(Pangolin REQUIRED)
+    find_package(GLEW REQUIRED)
+    add_library(slam_orbslam3_adapter src/orbslam3_tracked_map_points.cpp)
+    add_library(slam::orbslam3_adapter ALIAS slam_orbslam3_adapter)
+    target_include_directories(
+        slam_orbslam3_adapter
+        SYSTEM PRIVATE
+            "${SLAM_ORB_SLAM3_ROOT}"
+            "${SLAM_ORB_SLAM3_ROOT}/include"
+            "${SLAM_ORB_SLAM3_ROOT}/include/CameraModels"
+            "${SLAM_ORB_SLAM3_ROOT}/Thirdparty/Sophus"
+            "${SLAM_ORB_SLAM3_ROOT}/Thirdparty/g2o/compat"
+    )
+    target_link_libraries(
+        slam_orbslam3_adapter
+        PUBLIC slam::point_cloud_delta_reducer
+        PRIVATE
+            Eigen3::Eigen
+            Boost::serialization
+            pango_core
+            GLEW::GLEW
+            opencv_core
+            "${SLAM_ORB_SLAM3_ROOT}/lib/libORB_SLAM3.dylib"
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(slam_orbslam3_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endif()
 
 add_executable(recorded_frame_dump tools/recorded_frame_dump.cpp)
 target_link_libraries(recorded_frame_dump PRIVATE slam::recorded_frame_source)

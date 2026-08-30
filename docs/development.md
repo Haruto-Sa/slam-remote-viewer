@@ -595,6 +595,26 @@ Suggested branch:
 feature/57-intel-mac-pointcloud-delta
 ```
 
+## Intel Mac task IM-SLAM-02: ORB-SLAM3 tracked-point adapter
+
+Goal: copy ORB-SLAM3 output into backend-independent telemetry values without
+exposing backend pointers to the reducer or network layers.
+
+Implemented behavior:
+
+- compile only when `SLAM_ENABLE_ORB_SLAM3=ON` and an explicit patched source
+  root is supplied;
+- use the public `System::GetTrackedMapPoints` API;
+- omit null and bad MapPoints, copy stable IDs and world positions, and sort by
+  ID before returning;
+- keep the default camera build independent of ORB-SLAM3 and its GPL library.
+
+Suggested branch:
+
+```text
+feature/intel-mac-orbslam3-adapter
+```
+
 ## Local development order
 
 Run and verify components from left to right:
