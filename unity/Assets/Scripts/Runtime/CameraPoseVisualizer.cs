@@ -153,6 +153,18 @@ namespace Slam.RemoteViewer
             SetVisualsEnabled(showPose && HasPose);
         }
 
+        public bool TryGetWorldBounds(out Bounds bounds)
+        {
+            if (!HasPose || cameraPoseRoot == null)
+            {
+                bounds = default;
+                return false;
+            }
+
+            bounds = new Bounds(cameraPoseRoot.position, Vector3.zero);
+            return true;
+        }
+
         private void ApplySettings(SettingsMessage settings)
         {
             if (settings == null || settings.Camera == null ||

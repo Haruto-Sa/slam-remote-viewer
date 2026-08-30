@@ -11,6 +11,29 @@ namespace Slam.RemoteViewer
         Left
     }
 
+    public readonly struct OrbitCameraFrameRequest
+    {
+        public OrbitCameraFrameRequest(
+            Bounds bounds,
+            float verticalFieldOfViewDegrees,
+            float aspectRatio,
+            float padding,
+            float nearClipDistance)
+        {
+            Bounds = bounds;
+            VerticalFieldOfViewDegrees = verticalFieldOfViewDegrees;
+            AspectRatio = aspectRatio;
+            Padding = padding;
+            NearClipDistance = nearClipDistance;
+        }
+
+        public Bounds Bounds { get; }
+        public float VerticalFieldOfViewDegrees { get; }
+        public float AspectRatio { get; }
+        public float Padding { get; }
+        public float NearClipDistance { get; }
+    }
+
     public readonly struct OrbitCameraCommand
     {
         public OrbitCameraCommand(
@@ -19,7 +42,8 @@ namespace Slam.RemoteViewer
             float zoom,
             bool reset = false,
             bool pointerBlocked = false,
-            OrbitCameraViewPreset? viewPreset = null)
+            OrbitCameraViewPreset? viewPreset = null,
+            OrbitCameraFrameRequest? frameRequest = null)
         {
             Orbit = orbit;
             Pan = pan;
@@ -27,6 +51,7 @@ namespace Slam.RemoteViewer
             Reset = reset;
             PointerBlocked = pointerBlocked;
             ViewPreset = viewPreset;
+            FrameRequest = frameRequest;
         }
 
         public Vector2 Orbit { get; }
@@ -35,6 +60,7 @@ namespace Slam.RemoteViewer
         public bool Reset { get; }
         public bool PointerBlocked { get; }
         public OrbitCameraViewPreset? ViewPreset { get; }
+        public OrbitCameraFrameRequest? FrameRequest { get; }
     }
 
     public sealed class OrbitCameraState
@@ -117,6 +143,16 @@ namespace Slam.RemoteViewer
             if (command.ViewPreset.HasValue)
             {
                 return SetViewPreset(command.ViewPreset.Value);
+            }
+            if (command.FrameRequest.HasValue)
+            {
+                OrbitCameraFrameRequest request = command.FrameRequest.Value;
+                return FrameBounds(
+                    request.Bounds,
+                    request.VerticalFieldOfViewDegrees,
+                    request.AspectRatio,
+                    request.Padding,
+                    request.NearClipDistance);
             }
             if (command.PointerBlocked)
             {
@@ -220,6 +256,84 @@ namespace Slam.RemoteViewer
             return changed;
         }
 
+        public bool FrameBounds(
+            Bounds bounds,
+            float verticalFieldOfViewDegrees,
+            float aspectRatio,
+            float padding,
+            float nearClipDistance)
+        {
+            ValidateBounds(bounds);
+            if (!IsFinite(verticalFieldOfViewDegrees) ||
+                verticalFieldOfViewDegrees <= 0f ||
+                verticalFieldOfViewDegrees >= 180f)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(verticalFieldOfViewDegrees),
+                    "vertical field of view must be between zero and 180 degrees");
+            }
+            if (!IsFinite(aspectRatio) || aspectRatio <= 0f)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(aspectRatio),
+                    "aspect ratio must be positive and finite");
+            }
+            if (!IsFinite(padding) || padding < 1f)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(padding),
+                    "padding must be finite and at least one");
+            }
+            if (!IsFinite(nearClipDistance) || nearClipDistance <= 0f)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(nearClipDistance),
+                    "near clip distance must be positive and finite");
+            }
+
+            float verticalTangent = Mathf.Tan(
+                verticalFieldOfViewDegrees * 0.5f * Mathf.Deg2Rad);
+            float horizontalTangent = verticalTangent * aspectRatio;
+            Quaternion inverseRotation = Quaternion.Inverse(Rotation);
+            Vector3 center = bounds.center;
+            Vector3 extents = bounds.extents;
+            float requiredDistance = minimumDistance;
+
+            for (var xSign = -1; xSign <= 1; xSign += 2)
+            {
+                for (var ySign = -1; ySign <= 1; ySign += 2)
+                {
+                    for (var zSign = -1; zSign <= 1; zSign += 2)
+                    {
+                        var offset = new Vector3(
+                            extents.x * xSign,
+                            extents.y * ySign,
+                            extents.z * zSign);
+                        Vector3 cameraSpace = inverseRotation * offset;
+                        requiredDistance = Mathf.Max(
+                            requiredDistance,
+                            Mathf.Abs(cameraSpace.x) * padding / horizontalTangent -
+                            cameraSpace.z,
+                            Mathf.Abs(cameraSpace.y) * padding / verticalTangent -
+                            cameraSpace.z,
+                            nearClipDistance - cameraSpace.z);
+                    }
+                }
+            }
+
+            float targetDistance = Mathf.Clamp(
+                requiredDistance,
+                minimumDistance,
+                maximumDistance);
+            bool changed =
+                Vector3.Distance(FocusPoint, center) > 0.000001f ||
+                !Mathf.Approximately(Distance, targetDistance);
+            FocusPoint = center;
+            Distance = targetDistance;
+            RebuildPose();
+            return changed;
+        }
+
         public void Reset()
         {
             FocusPoint = initialFocusPoint;
@@ -268,6 +382,19 @@ namespace Slam.RemoteViewer
             if (!IsFinite(value.x) || !IsFinite(value.y) || !IsFinite(value.z))
             {
                 throw new ArgumentOutOfRangeException(name, "vector must contain finite values");
+            }
+        }
+
+        private static void ValidateBounds(Bounds value)
+        {
+            ValidateVector(value.center, nameof(value));
+            Vector3 size = value.size;
+            if (!IsFinite(size.x) || !IsFinite(size.y) || !IsFinite(size.z) ||
+                size.x < 0f || size.y < 0f || size.z < 0f)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(value),
+                    "bounds size must be finite and non-negative");
             }
         }
 

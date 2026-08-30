@@ -145,6 +145,7 @@ In Play Mode:
 - press `2` for the right view from positive X;
 - press `3` for the back view from positive Z;
 - press `4` for the left view from negative X;
+- press `F` to center and fit all visible retained telemetry;
 - press `R` to restore the initial camera pose and focus point.
 
 The focus point, distance and pitch limits, orbit and pan speeds, zoom amount,
@@ -154,6 +155,13 @@ Orbit, pan, and zoom remain available immediately afterward. Motion uses
 unscaled time, so camera navigation continues when `Time.timeScale` is zero.
 Pointer input over the visible telemetry diagnostics panel is ignored; keyboard
 presets and reset remain available over the panel.
+
+Frame-all uses the retained camera pose, trajectory, and point-cloud bounds for
+layers that are currently visible. It excludes hidden layers and the world grid.
+The current viewing direction is preserved while focus and distance change.
+`Frame All Key` and `Framing Padding` are configurable on
+`OrbitCameraController`; the result remains within its minimum and maximum
+distance limits. Pressing `F` before any visible telemetry exists has no effect.
 
 ## World grid and axes
 

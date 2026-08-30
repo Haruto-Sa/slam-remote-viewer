@@ -139,5 +139,26 @@ namespace Slam.RemoteViewer.Tests
                 Is.True);
             Assert.That(visualizer.RenderRevision, Is.EqualTo(updatedRenderRevision));
         }
+
+        [Test]
+        public void ReportsBoundsAcrossRetainedPointCloud()
+        {
+            visualizer.HandleMessage(PointCloudStateTests.Settings("session-a"));
+            visualizer.HandleMessage(PointCloudStateTests.Delta(
+                "session-a",
+                add: new System.Collections.Generic.IList<double>[]
+                {
+                    new double[] { 1, -2, 1, 3 },
+                    new double[] { 2, 4, 5, -1 }
+                }));
+
+            Assert.That(visualizer.TryGetWorldBounds(out Bounds bounds), Is.True);
+            Assert.That(
+                Vector3.Distance(bounds.min, new Vector3(-2f, 1f, -1f)),
+                Is.LessThan(0.0001f));
+            Assert.That(
+                Vector3.Distance(bounds.max, new Vector3(4f, 5f, 3f)),
+                Is.LessThan(0.0001f));
+        }
     }
 }

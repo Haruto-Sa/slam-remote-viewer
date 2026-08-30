@@ -74,5 +74,21 @@ namespace Slam.RemoteViewer.Tests
             Assert.That(visualizer.SegmentRenderers[0].enabled, Is.True);
             Assert.That(visualizer.SegmentRenderers[0].GetInstanceID(), Is.EqualTo(rendererId));
         }
+
+        [Test]
+        public void ReportsBoundsAcrossRetainedTrajectoryPoints()
+        {
+            visualizer.HandleMessage(TrajectoryHistoryTests.Settings("session-a"));
+            visualizer.HandleMessage(TrajectoryHistoryTests.Pose("session-a", -2, 1, 3));
+            visualizer.HandleMessage(TrajectoryHistoryTests.Pose("session-a", 4, 5, -1));
+
+            Assert.That(visualizer.TryGetWorldBounds(out Bounds bounds), Is.True);
+            Assert.That(
+                Vector3.Distance(bounds.min, new Vector3(-2f, 1f, -1f)),
+                Is.LessThan(0.0001f));
+            Assert.That(
+                Vector3.Distance(bounds.max, new Vector3(4f, 5f, 3f)),
+                Is.LessThan(0.0001f));
+        }
     }
 }

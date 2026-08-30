@@ -129,6 +129,35 @@ namespace Slam.RemoteViewer
             }
         }
 
+        public bool TryGetWorldBounds(out Bounds bounds)
+        {
+            if (history == null || history.PointCount == 0)
+            {
+                bounds = default;
+                return false;
+            }
+
+            bool hasBounds = false;
+            bounds = default;
+            for (var segmentIndex = 0; segmentIndex < history.SegmentCount; segmentIndex++)
+            {
+                IReadOnlyList<Vector3> segment = history.GetSegment(segmentIndex);
+                foreach (Vector3 position in segment)
+                {
+                    if (!hasBounds)
+                    {
+                        bounds = new Bounds(position, Vector3.zero);
+                        hasBounds = true;
+                    }
+                    else
+                    {
+                        bounds.Encapsulate(position);
+                    }
+                }
+            }
+            return hasBounds;
+        }
+
         private void Initialize()
         {
             if (trajectoryRoot == null)
