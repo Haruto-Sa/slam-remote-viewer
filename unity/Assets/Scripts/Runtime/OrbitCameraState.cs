@@ -3,6 +3,14 @@ using UnityEngine;
 
 namespace Slam.RemoteViewer
 {
+    public enum OrbitCameraViewPreset
+    {
+        Front,
+        Right,
+        Back,
+        Left
+    }
+
     public readonly struct OrbitCameraCommand
     {
         public OrbitCameraCommand(
@@ -10,13 +18,15 @@ namespace Slam.RemoteViewer
             Vector2 pan,
             float zoom,
             bool reset = false,
-            bool pointerBlocked = false)
+            bool pointerBlocked = false,
+            OrbitCameraViewPreset? viewPreset = null)
         {
             Orbit = orbit;
             Pan = pan;
             Zoom = zoom;
             Reset = reset;
             PointerBlocked = pointerBlocked;
+            ViewPreset = viewPreset;
         }
 
         public Vector2 Orbit { get; }
@@ -24,6 +34,7 @@ namespace Slam.RemoteViewer
         public float Zoom { get; }
         public bool Reset { get; }
         public bool PointerBlocked { get; }
+        public OrbitCameraViewPreset? ViewPreset { get; }
     }
 
     public sealed class OrbitCameraState
@@ -103,6 +114,10 @@ namespace Slam.RemoteViewer
                 Reset();
                 return true;
             }
+            if (command.ViewPreset.HasValue)
+            {
+                return SetViewPreset(command.ViewPreset.Value);
+            }
             if (command.PointerBlocked)
             {
                 return false;
@@ -173,6 +188,36 @@ namespace Slam.RemoteViewer
                 minimumDistance,
                 maximumDistance);
             RebuildPose();
+        }
+
+        public bool SetViewPreset(OrbitCameraViewPreset preset)
+        {
+            float targetYaw;
+            switch (preset)
+            {
+                case OrbitCameraViewPreset.Front:
+                    targetYaw = 0f;
+                    break;
+                case OrbitCameraViewPreset.Right:
+                    targetYaw = -90f;
+                    break;
+                case OrbitCameraViewPreset.Back:
+                    targetYaw = -180f;
+                    break;
+                case OrbitCameraViewPreset.Left:
+                    targetYaw = 90f;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(preset));
+            }
+
+            bool changed =
+                !Mathf.Approximately(YawDegrees, targetYaw) ||
+                !Mathf.Approximately(PitchDegrees, 0f);
+            YawDegrees = targetYaw;
+            PitchDegrees = 0f;
+            RebuildPose();
+            return changed;
         }
 
         public void Reset()

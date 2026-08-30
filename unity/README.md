@@ -141,13 +141,19 @@ In Play Mode:
 - hold the right mouse button and drag to orbit around the focus point;
 - hold the middle mouse button and drag to pan the camera and focus point;
 - use the mouse wheel to zoom;
+- press `1` for the front view from negative Z;
+- press `2` for the right view from positive X;
+- press `3` for the back view from positive Z;
+- press `4` for the left view from negative X;
 - press `R` to restore the initial camera pose and focus point.
 
 The focus point, distance and pitch limits, orbit and pan speeds, zoom amount,
-and reset key are configurable in the Inspector. Motion uses unscaled time, so
-camera navigation continues when `Time.timeScale` is zero. Pointer input over
-the visible telemetry diagnostics panel is ignored; hiding the panel makes its
-screen area available for camera input again.
+reset key, and four preset keys are configurable in the Inspector. A side-view
+preset preserves the current focus and distance while setting pitch to zero.
+Orbit, pan, and zoom remain available immediately afterward. Motion uses
+unscaled time, so camera navigation continues when `Time.timeScale` is zero.
+Pointer input over the visible telemetry diagnostics panel is ignored; keyboard
+presets and reset remain available over the panel.
 
 ## World grid and axes
 

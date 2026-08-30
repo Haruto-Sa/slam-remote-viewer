@@ -53,5 +53,40 @@ namespace Slam.RemoteViewer.Tests
                 Object.DestroyImmediate(gameObject);
             }
         }
+
+        [Test]
+        public void AppliesCardinalPresetToCameraTransform()
+        {
+            var gameObject = new GameObject("Orbit Camera Test");
+            try
+            {
+                gameObject.transform.position = new Vector3(0f, 1f, -10f);
+                var controller = gameObject.AddComponent<OrbitCameraController>();
+
+                bool changed = controller.ApplyCommand(
+                    new OrbitCameraCommand(
+                        Vector2.zero,
+                        Vector2.zero,
+                        0f,
+                        viewPreset: OrbitCameraViewPreset.Right),
+                    0f);
+
+                Assert.That(changed, Is.True);
+                Assert.That(
+                    Vector3.Distance(
+                        gameObject.transform.position,
+                        new Vector3(10f, 1f, 0f)),
+                    Is.LessThan(0.0001f));
+                Assert.That(
+                    Vector3.Distance(
+                        gameObject.transform.forward,
+                        Vector3.left),
+                    Is.LessThan(0.0001f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(gameObject);
+            }
+        }
     }
 }

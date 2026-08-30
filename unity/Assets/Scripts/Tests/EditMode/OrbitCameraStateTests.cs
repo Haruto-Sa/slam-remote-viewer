@@ -71,6 +71,7 @@ namespace Slam.RemoteViewer.Tests
             state.Orbit(50f, 25f);
             state.Pan(3f, -2f);
             state.Zoom(-4f);
+            state.SetViewPreset(OrbitCameraViewPreset.Back);
             state.Reset();
 
             AssertVector(state.Position, initialPosition);
@@ -101,6 +102,107 @@ namespace Slam.RemoteViewer.Tests
             AssertVector(state.FocusPoint, initialFocus);
         }
 
+        [TestCase(OrbitCameraViewPreset.Front, 0f, -1f, 0f, 1f, 0f)]
+        [TestCase(OrbitCameraViewPreset.Right, 1f, 0f, -1f, 0f, -90f)]
+        [TestCase(OrbitCameraViewPreset.Back, 0f, 1f, 0f, -1f, -180f)]
+        [TestCase(OrbitCameraViewPreset.Left, -1f, 0f, 1f, 0f, 90f)]
+        public void CardinalPresetPreservesFocusAndDistance(
+            OrbitCameraViewPreset preset,
+            float offsetX,
+            float offsetZ,
+            float forwardX,
+            float forwardZ,
+            float expectedYaw)
+        {
+            OrbitCameraState state = CreateState();
+            state.Orbit(35f, 20f);
+            state.Pan(2f, 1f);
+            state.Zoom(-3f);
+            Vector3 focus = state.FocusPoint;
+            float distance = state.Distance;
+
+            bool changed = state.SetViewPreset(preset);
+
+            Assert.That(changed, Is.True);
+            AssertVector(state.FocusPoint, focus);
+            Assert.That(state.Distance, Is.EqualTo(distance).Within(0.0001f));
+            Assert.That(state.PitchDegrees, Is.Zero.Within(0.0001f));
+            Assert.That(state.YawDegrees, Is.EqualTo(expectedYaw).Within(0.0001f));
+            AssertVector(
+                state.Position,
+                focus + new Vector3(offsetX, 0f, offsetZ) * distance);
+            AssertVector(
+                state.Rotation * Vector3.forward,
+                new Vector3(forwardX, 0f, forwardZ));
+        }
+
+        [Test]
+        public void RepeatedPresetSelectionDoesNotAccumulateError()
+        {
+            OrbitCameraState state = CreateState();
+            state.Orbit(37f, 22f);
+            state.SetViewPreset(OrbitCameraViewPreset.Right);
+            Vector3 expectedPosition = state.Position;
+            Quaternion expectedRotation = state.Rotation;
+
+            for (var index = 0; index < 100; index++)
+            {
+                Assert.That(
+                    state.SetViewPreset(OrbitCameraViewPreset.Right),
+                    Is.False);
+            }
+
+            AssertVector(state.Position, expectedPosition);
+            Assert.That(
+                Quaternion.Angle(state.Rotation, expectedRotation),
+                Is.LessThan(0.0001f));
+        }
+
+        [Test]
+        public void PresetCommandWorksOverOverlayAndOrbitContinuesAfterward()
+        {
+            OrbitCameraState state = CreateState();
+
+            bool changed = state.ApplyCommand(
+                new OrbitCameraCommand(
+                    Vector2.zero,
+                    Vector2.zero,
+                    0f,
+                    pointerBlocked: true,
+                    viewPreset: OrbitCameraViewPreset.Left),
+                10f,
+                2f,
+                1f);
+            state.Orbit(10f, 5f);
+
+            Assert.That(changed, Is.True);
+            Assert.That(state.YawDegrees, Is.EqualTo(100f).Within(0.0001f));
+            Assert.That(state.PitchDegrees, Is.EqualTo(5f).Within(0.0001f));
+        }
+
+        [Test]
+        public void PanZoomAndOrbitRemainUsableAfterPreset()
+        {
+            OrbitCameraState state = CreateState();
+            state.SetViewPreset(OrbitCameraViewPreset.Back);
+            Vector3 initialFocus = state.FocusPoint;
+            float initialDistance = state.Distance;
+
+            state.Pan(1f, 1f);
+            state.Zoom(-2f);
+            state.Orbit(15f, 10f);
+
+            Assert.That(
+                Vector3.Distance(state.FocusPoint, initialFocus),
+                Is.GreaterThan(0.1f));
+            Assert.That(state.Distance, Is.EqualTo(initialDistance - 2f).Within(0.0001f));
+            Assert.That(state.YawDegrees, Is.EqualTo(-165f).Within(0.0001f));
+            Assert.That(state.PitchDegrees, Is.EqualTo(10f).Within(0.0001f));
+            AssertVector(
+                state.Rotation * Vector3.forward,
+                (state.FocusPoint - state.Position).normalized);
+        }
+
         [Test]
         public void RejectsInvalidConstructionAndCommandValues()
         {
@@ -121,6 +223,8 @@ namespace Slam.RemoteViewer.Tests
 
             OrbitCameraState state = CreateState();
             Assert.Throws<ArgumentOutOfRangeException>(() => state.Zoom(float.NaN));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                state.SetViewPreset((OrbitCameraViewPreset)999));
         }
 
         private static OrbitCameraState CreateState()

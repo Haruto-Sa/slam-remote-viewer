@@ -34,6 +34,19 @@ namespace Slam.RemoteViewer
         [SerializeField]
         private KeyCode resetKey = KeyCode.R;
 
+        [Header("View presets")]
+        [SerializeField]
+        private KeyCode frontViewKey = KeyCode.Alpha1;
+
+        [SerializeField]
+        private KeyCode rightViewKey = KeyCode.Alpha2;
+
+        [SerializeField]
+        private KeyCode backViewKey = KeyCode.Alpha3;
+
+        [SerializeField]
+        private KeyCode leftViewKey = KeyCode.Alpha4;
+
         [Header("Input blocking")]
         [SerializeField]
         private TelemetryDiagnosticsOverlay diagnosticsOverlay;
@@ -118,13 +131,36 @@ namespace Slam.RemoteViewer
             Vector2 pan = Input.GetMouseButton(2)
                 ? new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"))
                 : Vector2.zero;
+            OrbitCameraViewPreset? viewPreset = ReadViewPreset();
 
             return new OrbitCameraCommand(
                 orbit,
                 pan,
                 Input.mouseScrollDelta.y,
                 Input.GetKeyDown(resetKey),
-                blocked);
+                blocked,
+                viewPreset);
+        }
+
+        private OrbitCameraViewPreset? ReadViewPreset()
+        {
+            if (Input.GetKeyDown(frontViewKey))
+            {
+                return OrbitCameraViewPreset.Front;
+            }
+            if (Input.GetKeyDown(rightViewKey))
+            {
+                return OrbitCameraViewPreset.Right;
+            }
+            if (Input.GetKeyDown(backViewKey))
+            {
+                return OrbitCameraViewPreset.Back;
+            }
+            if (Input.GetKeyDown(leftViewKey))
+            {
+                return OrbitCameraViewPreset.Left;
+            }
+            return null;
         }
 
         private void ApplyPose()

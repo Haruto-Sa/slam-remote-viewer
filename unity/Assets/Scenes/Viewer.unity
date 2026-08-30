@@ -383,6 +383,10 @@ MonoBehaviour:
   panSpeedUnitsPerSecond: 5
   zoomUnitsPerScroll: 1.5
   resetKey: 114
+  frontViewKey: 49
+  rightViewKey: 50
+  backViewKey: 51
+  leftViewKey: 52
   diagnosticsOverlay: {fileID: 1238453624}
 --- !u!1 &1238453618
 GameObject:
