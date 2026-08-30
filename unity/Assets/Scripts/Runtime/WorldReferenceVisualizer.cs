@@ -53,6 +53,8 @@ namespace Slam.RemoteViewer
             }
         }
 
+        public bool IsVisible => showReference;
+
         public float GridSpacing => gridSpacing;
         public float GridExtent => gridExtent;
         public float LineWidth => lineWidth;
@@ -62,6 +64,11 @@ namespace Slam.RemoteViewer
         public LineRenderer YAxisLine => yAxisLine;
         public LineRenderer ZAxisLine => zAxisLine;
         public int RendererCount => GetComponentsInChildren<Renderer>(true).Length;
+
+        public void SetVisible(bool visible)
+        {
+            ShowReference = visible;
+        }
 
         private void Awake()
         {

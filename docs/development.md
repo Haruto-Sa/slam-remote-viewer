@@ -84,6 +84,7 @@ An Issue is done when:
 - #45 Add a Unity telemetry diagnostics overlay.
 - #49 Add orbit, pan, and zoom controls to the Unity Viewer.
 - #51 Add a configurable world grid and axis reference to the Unity Viewer.
+- #53 Add visualization visibility controls to the Unity Viewer.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -633,6 +634,45 @@ Suggested branch:
 
 ```text
 feature/51-unity-world-grid
+```
+
+## Issue 53: Unity visualization visibility controls
+
+Goal: hide or show individual Viewer layers without clearing their retained
+telemetry or editing several components in the Inspector.
+
+Implemented behavior:
+
+- maintain visibility and configured defaults in a testable state model
+  independent of Unity input APIs;
+- toggle pose/frustum with `P`, trajectory with `T`, point cloud with `C`, world
+  reference with `G`, and diagnostics with `D`;
+- restore all configured default visibility values with `V`;
+- expose shortcut keys, defaults, and read-only current visibility through the
+  Viewer components;
+- keep hidden telemetry visualizers subscribed and updating their retained
+  state;
+- change only renderer visibility, without rebuilding geometry;
+- tolerate missing optional visualizers;
+- attach the controller to the default Viewer scene.
+
+Acceptance criteria:
+
+- each shortcut affects only its assigned layer;
+- hidden pose, trajectory, point-cloud, and diagnostics state continues to
+  update and is immediately available when shown again;
+- visibility toggles reuse existing renderers and generated geometry;
+- restoring defaults is deterministic;
+- missing visualizers do not produce exceptions;
+- EditMode tests cover commands, defaults, retained state, missing references,
+  and renderer reuse;
+- no files below `sender/camera` or `sender/slam` are changed;
+- Receiver and Protocol v1 behavior remain unchanged.
+
+Suggested branch:
+
+```text
+feature/53-unity-visibility-controls
 ```
 
 ## Local development order

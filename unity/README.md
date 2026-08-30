@@ -163,3 +163,21 @@ geometry uses complete spacing intervals within the configured extent and is
 batched into one mesh; together with the three axis lines, the renderer count
 remains fixed at four. The reference does not subscribe to telemetry, so
 session changes do not rebuild or clear it.
+
+## Visualization visibility shortcuts
+
+The default `Viewer` scene includes `VisualizationVisibilityController` on the
+`Telemetry` GameObject. In Play Mode:
+
+- press `P` to toggle the tracked camera marker and frustum;
+- press `T` to toggle trajectory lines;
+- press `C` to toggle the point cloud;
+- press `G` to toggle the world grid and axes;
+- press `D` to toggle the diagnostics overlay;
+- press `V` to restore the configured default visibility values.
+
+Shortcut keys and default visibility values are configurable on the controller
+in the Inspector. Hiding a layer changes only its renderers: telemetry remains
+subscribed, retained state keeps updating, and showing the layer again displays
+the latest state without recreating its geometry. Missing optional visualizers
+are ignored safely.

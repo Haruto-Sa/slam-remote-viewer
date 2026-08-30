@@ -38,10 +38,16 @@ namespace Slam.RemoteViewer
 
         public TelemetryDiagnosticsState State => state;
         public Rect PanelRect => panelRect;
+        public bool IsVisible => showOverlay;
         public bool ShowOverlay
         {
             get => showOverlay;
             set => showOverlay = value;
+        }
+
+        public void SetVisible(bool visible)
+        {
+            showOverlay = visible;
         }
 
         public bool ContainsScreenPoint(Vector2 screenPoint, float screenHeight)

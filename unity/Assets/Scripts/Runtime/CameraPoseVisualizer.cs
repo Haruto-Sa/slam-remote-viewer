@@ -19,6 +19,10 @@ namespace Slam.RemoteViewer
         [SerializeField]
         private LineRenderer frustumLine;
 
+        [Header("Visibility")]
+        [SerializeField]
+        private bool showPose = true;
+
         [Header("Frustum")]
         [SerializeField, Range(1f, 179f)]
         private float verticalFieldOfViewDegrees = 60f;
@@ -57,6 +61,7 @@ namespace Slam.RemoteViewer
         public PoseTrackingState? TrackingState { get; private set; }
         public Transform CameraPoseTransform => cameraPoseRoot;
         public LineRenderer FrustumLine => frustumLine;
+        public bool IsVisible => showPose;
 
         private void Awake()
         {
@@ -142,6 +147,12 @@ namespace Slam.RemoteViewer
             }
         }
 
+        public void SetVisible(bool visible)
+        {
+            showPose = visible;
+            SetVisualsEnabled(showPose && HasPose);
+        }
+
         private void ApplySettings(SettingsMessage settings)
         {
             if (settings == null || settings.Camera == null ||
@@ -194,7 +205,7 @@ namespace Slam.RemoteViewer
             cameraPoseRoot.SetPositionAndRotation(position, rotation);
             TrackingState = pose.State;
             HasPose = true;
-            SetVisualsEnabled(true);
+            SetVisualsEnabled(showPose);
             ApplyStateColor(ColorFor(pose.State));
         }
 

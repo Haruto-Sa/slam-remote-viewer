@@ -113,6 +113,32 @@ namespace Slam.RemoteViewer.Tests
             Assert.That(visualizer.FrustumLine.enabled, Is.False);
         }
 
+        [Test]
+        public void HiddenPoseStillRetainsLatestTelemetryAndReusesVisuals()
+        {
+            visualizer.HandleMessage(Settings("session-a", 1280, 720));
+            visualizer.HandleMessage(Pose(
+                "session-a",
+                new[] { 1.0, 2.0, 3.0 },
+                new[] { 0.0, 0.0, 0.0, 1.0 }));
+            int frustumId = visualizer.FrustumLine.GetInstanceID();
+
+            visualizer.SetVisible(false);
+            visualizer.HandleMessage(Pose(
+                "session-a",
+                new[] { 4.0, 5.0, 6.0 },
+                new[] { 0.0, 0.0, 0.0, 1.0 }));
+
+            Assert.That(visualizer.IsVisible, Is.False);
+            Assert.That(visualizer.HasPose, Is.True);
+            AssertVector(visualizer.CameraPoseTransform.position, new Vector3(4f, 5f, 6f));
+            Assert.That(visualizer.FrustumLine.enabled, Is.False);
+
+            visualizer.SetVisible(true);
+            Assert.That(visualizer.FrustumLine.enabled, Is.True);
+            Assert.That(visualizer.FrustumLine.GetInstanceID(), Is.EqualTo(frustumId));
+        }
+
         private static SettingsMessage Settings(string session, uint width, uint height)
         {
             return new SettingsMessage(

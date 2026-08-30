@@ -14,6 +14,10 @@ namespace Slam.RemoteViewer
         [SerializeField]
         private Transform trajectoryRoot;
 
+        [Header("Visibility")]
+        [SerializeField]
+        private bool showTrajectory = true;
+
         [SerializeField]
         private Material lineMaterial;
 
@@ -38,6 +42,7 @@ namespace Slam.RemoteViewer
         public int SegmentCount => history?.SegmentCount ?? 0;
         public Transform TrajectoryRoot => trajectoryRoot;
         public IReadOnlyList<LineRenderer> SegmentRenderers => segmentRenderers;
+        public bool IsVisible => showTrajectory;
 
         private void Awake()
         {
@@ -112,6 +117,18 @@ namespace Slam.RemoteViewer
             return history.GetSegment(index);
         }
 
+        public void SetVisible(bool visible)
+        {
+            showTrajectory = visible;
+            foreach (LineRenderer renderer in segmentRenderers)
+            {
+                if (renderer != null)
+                {
+                    renderer.enabled = showTrajectory;
+                }
+            }
+        }
+
         private void Initialize()
         {
             if (trajectoryRoot == null)
@@ -181,6 +198,7 @@ namespace Slam.RemoteViewer
             renderer.endColor = lineColor;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+            renderer.enabled = showTrajectory;
 
             if (lineMaterial != null)
             {
