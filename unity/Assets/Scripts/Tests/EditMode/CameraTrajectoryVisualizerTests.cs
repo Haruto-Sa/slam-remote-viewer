@@ -53,5 +53,26 @@ namespace Slam.RemoteViewer.Tests
             Assert.That(visualizer.SegmentRenderers, Is.Empty);
             Assert.That(visualizer.ActiveSession, Is.EqualTo("session-b"));
         }
+
+        [Test]
+        public void HiddenTrajectoryRetainsPointsAndReusesRenderer()
+        {
+            visualizer.HandleMessage(TrajectoryHistoryTests.Settings("session-a"));
+            visualizer.HandleMessage(TrajectoryHistoryTests.Pose("session-a", 0, 0, 0));
+            visualizer.HandleMessage(TrajectoryHistoryTests.Pose("session-a", 1, 0, 0));
+            int rendererId = visualizer.SegmentRenderers[0].GetInstanceID();
+
+            visualizer.SetVisible(false);
+            visualizer.HandleMessage(TrajectoryHistoryTests.Pose("session-a", 2, 0, 0));
+
+            Assert.That(visualizer.IsVisible, Is.False);
+            Assert.That(visualizer.PointCount, Is.EqualTo(3));
+            Assert.That(visualizer.SegmentRenderers[0].positionCount, Is.EqualTo(3));
+            Assert.That(visualizer.SegmentRenderers[0].enabled, Is.False);
+
+            visualizer.SetVisible(true);
+            Assert.That(visualizer.SegmentRenderers[0].enabled, Is.True);
+            Assert.That(visualizer.SegmentRenderers[0].GetInstanceID(), Is.EqualTo(rendererId));
+        }
     }
 }

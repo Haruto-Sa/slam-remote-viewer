@@ -36,6 +36,7 @@ namespace Slam.RemoteViewer
         public long RenderRevision { get; private set; }
         public int RenderedPointCount { get; private set; }
         public ParticleSystem ParticleSystemTarget => particleSystemTarget;
+        public bool IsVisible => showPointCloud;
 
         private void Awake()
         {
@@ -112,6 +113,15 @@ namespace Slam.RemoteViewer
             }
 
             return state.TryGetPoint(id, out position);
+        }
+
+        public void SetVisible(bool visible)
+        {
+            showPointCloud = visible;
+            if (particleSystemTarget != null)
+            {
+                particleSystemTarget.GetComponent<ParticleSystemRenderer>().enabled = visible;
+            }
         }
 
         private void Initialize()

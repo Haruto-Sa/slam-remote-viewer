@@ -398,6 +398,7 @@ GameObject:
   - component: {fileID: 1238453622}
   - component: {fileID: 1238453623}
   - component: {fileID: 1238453624}
+  - component: {fileID: 1238453625}
   m_Layer: 0
   m_Name: Telemetry
   m_TagString: Untagged
@@ -420,6 +421,7 @@ MonoBehaviour:
   subscriber: {fileID: 0}
   cameraPoseRoot: {fileID: 0}
   frustumLine: {fileID: 0}
+  showPose: 1
   verticalFieldOfViewDegrees: 60
   frustumDepth: 0.5
   lineWidth: 0.01
@@ -472,6 +474,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Slam.RemoteViewer::Slam.RemoteViewer.CameraTrajectoryVisualizer
   subscriber: {fileID: 0}
   trajectoryRoot: {fileID: 0}
+  showTrajectory: 1
   lineMaterial: {fileID: 0}
   lineColor: {r: 0.1, g: 0.8, b: 1, a: 1}
   lineWidth: 0.02
@@ -520,6 +523,34 @@ MonoBehaviour:
     width: 520
     height: 360
   fontSize: 18
+--- !u!114 &1238453625
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238453618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46230f3ab7014c76b76c5d2877278ad2, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Slam.RemoteViewer::Slam.RemoteViewer.VisualizationVisibilityController
+  cameraPoseVisualizer: {fileID: 1238453619}
+  trajectoryVisualizer: {fileID: 1238453622}
+  pointCloudVisualizer: {fileID: 1238453623}
+  worldReferenceVisualizer: {fileID: 734851003}
+  diagnosticsOverlay: {fileID: 1238453624}
+  cameraPoseKey: 112
+  trajectoryKey: 116
+  pointCloudKey: 99
+  worldReferenceKey: 103
+  diagnosticsKey: 100
+  restoreDefaultsKey: 118
+  cameraPoseVisibleByDefault: 1
+  trajectoryVisibleByDefault: 1
+  pointCloudVisibleByDefault: 1
+  worldReferenceVisibleByDefault: 1
+  diagnosticsVisibleByDefault: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

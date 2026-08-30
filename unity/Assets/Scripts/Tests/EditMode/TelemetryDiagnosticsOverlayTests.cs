@@ -19,6 +19,7 @@ namespace Slam.RemoteViewer.Tests
 
                 Assert.That(overlay.enabled, Is.True);
                 Assert.That(overlay.ShowOverlay, Is.False);
+                Assert.That(overlay.IsVisible, Is.False);
                 Assert.That(overlay.State.ActiveSession, Is.EqualTo("session-a"));
                 Assert.That(overlay.State.HasReceivedMessage, Is.True);
             }
