@@ -44,7 +44,11 @@ if(SLAM_ENABLE_ORB_SLAM3)
     find_package(Boost 1.70 REQUIRED COMPONENTS serialization)
     find_package(Pangolin REQUIRED)
     find_package(GLEW REQUIRED)
-    add_library(slam_orbslam3_adapter src/orbslam3_tracked_map_points.cpp)
+    add_library(
+        slam_orbslam3_adapter
+        src/orbslam3_tracked_map_points.cpp
+        src/orbslam3_monocular_tracker.cpp
+    )
     add_library(slam::orbslam3_adapter ALIAS slam_orbslam3_adapter)
     target_include_directories(
         slam_orbslam3_adapter

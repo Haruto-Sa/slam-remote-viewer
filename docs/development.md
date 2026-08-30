@@ -615,6 +615,29 @@ Suggested branch:
 feature/intel-mac-orbslam3-adapter
 ```
 
+## Intel Mac task IM-SLAM-03: ORB-SLAM3 monocular tracker
+
+Goal: feed the shared live or recorded camera frame contract into ORB-SLAM3 and
+return one backend-independent result for telemetry and diagnostics.
+
+Implemented behavior:
+
+- accept Gray8, BGR8, and RGB8 `ImageFrame` buffers without an extra image copy;
+- preserve frame IDs and convert monotonic capture timestamps to seconds;
+- convert ORB-SLAM3's `Tcw` result to the canonical `Twc` camera pose and xyzw
+  quaternion expected by Protocol v1;
+- map backend tracking states and retain the last valid pose while tracking is
+  temporarily lost;
+- attach the public tracked-point snapshot for downstream voxel reduction;
+- reset the active map and cached pose together, and shut down backend threads
+  exactly once.
+
+Suggested branch:
+
+```text
+feature/intel-mac-orbslam3-monocular-tracker
+```
+
 ## Local development order
 
 Run and verify components from left to right:
