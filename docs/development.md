@@ -87,6 +87,7 @@ An Issue is done when:
 - #53 Add visualization visibility controls to the Unity Viewer.
 - #54 Add four cardinal camera view presets to the Unity Viewer.
 - #57 Add frame-all telemetry camera control to the Unity Viewer.
+- #59 Add a keyboard shortcuts help overlay to the Unity Viewer.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -749,6 +750,41 @@ Suggested branch:
 
 ```text
 feature/57-unity-frame-all
+```
+
+## Issue 59: Unity Viewer controls help overlay
+
+Goal: keep the growing set of Viewer controls discoverable without requiring
+the setup guide to remain open.
+
+Implemented behavior:
+
+- show a compact mouse and keyboard shortcut reference in the default Viewer
+  scene;
+- toggle only the help panel with `H`;
+- build displayed key labels from the configured orbit-camera and visibility
+  controllers;
+- expose the initial visibility, toggle key, panel rectangle, and font size in
+  the Inspector;
+- block orbit, pan, and zoom while the pointer is over the visible help panel;
+- keep the help and diagnostics panels independent and usable together.
+
+Acceptance criteria:
+
+- the panel lists every current Viewer camera and visibility control;
+- `H` shows and hides the panel without changing camera or telemetry state;
+- only a visible panel blocks pointer camera input inside its rectangle;
+- configured shortcut keys appear in the help content;
+- the default Viewer scene contains the overlay and its controller references;
+- EditMode tests cover toggling, content, key formatting, and pointer-region
+  detection;
+- no files below `sender/camera` or `sender/slam` are changed;
+- Receiver and Protocol v1 behavior remain unchanged.
+
+Suggested branch:
+
+```text
+feature/59-unity-controls-help-overlay
 ```
 
 ## Local development order

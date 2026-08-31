@@ -394,6 +394,7 @@ MonoBehaviour:
   frameAllKey: 102
   framingPadding: 1.1
   diagnosticsOverlay: {fileID: 1238453624}
+  controlsOverlay: {fileID: 1238453626}
 --- !u!1 &1238453618
 GameObject:
   m_ObjectHideFlags: 0
@@ -409,6 +410,7 @@ GameObject:
   - component: {fileID: 1238453623}
   - component: {fileID: 1238453624}
   - component: {fileID: 1238453625}
+  - component: {fileID: 1238453626}
   m_Layer: 0
   m_Name: Telemetry
   m_TagString: Untagged
@@ -561,6 +563,29 @@ MonoBehaviour:
   pointCloudVisibleByDefault: 1
   worldReferenceVisibleByDefault: 1
   diagnosticsVisibleByDefault: 1
+--- !u!114 &1238453626
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1238453618}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c42aed153fc541ffb313f30bf44fe153, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Slam.RemoteViewer::Slam.RemoteViewer.ViewerControlsOverlay
+  orbitCameraController: {fileID: 988585371}
+  visibilityController: {fileID: 1238453625}
+  showOverlay: 1
+  toggleKey: 104
+  panelRect:
+    serializedVersion: 2
+    x: 544
+    y: 16
+    width: 400
+    height: 330
+  fontSize: 18
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
