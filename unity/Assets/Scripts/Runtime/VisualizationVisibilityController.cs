@@ -58,6 +58,12 @@ namespace Slam.RemoteViewer
         private VisualizationVisibilityState state;
 
         public VisualizationVisibilityState State => state;
+        public KeyCode CameraPoseKey => cameraPoseKey;
+        public KeyCode TrajectoryKey => trajectoryKey;
+        public KeyCode PointCloudKey => pointCloudKey;
+        public KeyCode WorldReferenceKey => worldReferenceKey;
+        public KeyCode DiagnosticsKey => diagnosticsKey;
+        public KeyCode RestoreDefaultsKey => restoreDefaultsKey;
 
         private void Awake()
         {

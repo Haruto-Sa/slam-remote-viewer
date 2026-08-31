@@ -153,8 +153,8 @@ reset key, and four preset keys are configurable in the Inspector. A side-view
 preset preserves the current focus and distance while setting pitch to zero.
 Orbit, pan, and zoom remain available immediately afterward. Motion uses
 unscaled time, so camera navigation continues when `Time.timeScale` is zero.
-Pointer input over the visible telemetry diagnostics panel is ignored; keyboard
-presets and reset remain available over the panel.
+Pointer input over the visible telemetry diagnostics or controls-help panel is
+ignored; keyboard presets and reset remain available over either panel.
 
 Frame-all uses the retained camera pose, trajectory, and point-cloud bounds for
 layers that are currently visible. It excludes hidden layers and the world grid.
@@ -195,3 +195,16 @@ in the Inspector. Hiding a layer changes only its renderers: telemetry remains
 subscribed, retained state keeps updating, and showing the layer again displays
 the latest state without recreating its geometry. Missing optional visualizers
 are ignored safely.
+
+## Controls help overlay
+
+The default `Viewer` scene includes `ViewerControlsOverlay` on the `Telemetry`
+GameObject. Press `H` in Play Mode to show or hide a compact reference for all
+camera, view, and visibility shortcuts. Hiding the panel changes only its
+drawing and does not alter the camera or any visualization state.
+
+The toggle key, initial visibility, panel rectangle, and font size are
+configurable in the Inspector. The displayed keyboard shortcuts are read from
+`OrbitCameraController` and `VisualizationVisibilityController`, so configured
+key changes are reflected in the help text. The help and diagnostics panels can
+remain visible at the same time.

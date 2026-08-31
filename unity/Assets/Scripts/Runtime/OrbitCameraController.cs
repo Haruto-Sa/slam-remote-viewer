@@ -70,9 +70,18 @@ namespace Slam.RemoteViewer
         [SerializeField]
         private TelemetryDiagnosticsOverlay diagnosticsOverlay;
 
+        [SerializeField]
+        private ViewerControlsOverlay controlsOverlay;
+
         private OrbitCameraState state;
 
         public OrbitCameraState State => state;
+        public KeyCode ResetKey => resetKey;
+        public KeyCode FrontViewKey => frontViewKey;
+        public KeyCode RightViewKey => rightViewKey;
+        public KeyCode BackViewKey => backViewKey;
+        public KeyCode LeftViewKey => leftViewKey;
+        public KeyCode FrameAllKey => frameAllKey;
 
         private void Awake()
         {
@@ -161,9 +170,13 @@ namespace Slam.RemoteViewer
 
         private OrbitCameraCommand ReadCommand()
         {
-            bool blocked = diagnosticsOverlay != null && diagnosticsOverlay.ContainsScreenPoint(
-                Input.mousePosition,
-                Screen.height);
+            bool blocked =
+                diagnosticsOverlay != null && diagnosticsOverlay.ContainsScreenPoint(
+                    Input.mousePosition,
+                    Screen.height) ||
+                controlsOverlay != null && controlsOverlay.ContainsScreenPoint(
+                    Input.mousePosition,
+                    Screen.height);
             Vector2 orbit = Input.GetMouseButton(1)
                 ? new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"))
                 : Vector2.zero;
