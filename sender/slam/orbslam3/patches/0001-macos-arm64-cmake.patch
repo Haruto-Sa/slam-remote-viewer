@@ -198,3 +198,10 @@ index 277eade..551867c 100644
 @@ -226,1 +226,1 @@ protected:
 -    bool mnFullBAIdx;
 +    int mnFullBAIdx;
+diff --git a/Examples/Monocular/mono_tum.cc b/Examples/Monocular/mono_tum.cc
+--- a/Examples/Monocular/mono_tum.cc
++++ b/Examples/Monocular/mono_tum.cc
+@@ -48,1 +48,2 @@ int main(int argc, char **argv)
+-    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::MONOCULAR,true);
++    // The telemetry sender is headless; Pangolin/AppKit must remain on macOS's main thread.
++    ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::MONOCULAR,false);
