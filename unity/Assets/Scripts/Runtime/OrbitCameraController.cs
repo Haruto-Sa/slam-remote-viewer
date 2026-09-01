@@ -73,6 +73,9 @@ namespace Slam.RemoteViewer
         [SerializeField]
         private ViewerControlsOverlay controlsOverlay;
 
+        [SerializeField]
+        private ClipRecordingControlBehaviour clipRecordingControl;
+
         private OrbitCameraState state;
 
         public OrbitCameraState State => state;
@@ -175,6 +178,9 @@ namespace Slam.RemoteViewer
                     Input.mousePosition,
                     Screen.height) ||
                 controlsOverlay != null && controlsOverlay.ContainsScreenPoint(
+                    Input.mousePosition,
+                    Screen.height) ||
+                clipRecordingControl != null && clipRecordingControl.ContainsScreenPoint(
                     Input.mousePosition,
                     Screen.height);
             Vector2 orbit = Input.GetMouseButton(1)

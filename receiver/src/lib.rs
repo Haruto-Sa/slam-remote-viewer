@@ -1,3 +1,5 @@
+pub mod clip;
+pub mod control;
 pub mod coordinates;
 pub mod playback;
 pub mod protocol;

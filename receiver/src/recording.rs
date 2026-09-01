@@ -316,7 +316,7 @@ struct RecordingMetadata<'a> {
     pointcloud_file: &'static str,
 }
 
-fn write_recorded_message(
+pub(crate) fn write_recorded_message(
     writer: &mut BufWriter<File>,
     path: &Path,
     message: &TelemetryMessage,
@@ -358,7 +358,7 @@ fn write_recorded_message(
         })
 }
 
-fn apply_delta(points: &mut BTreeMap<u64, [f64; 3]>, delta: &PointCloudMessage) {
+pub(crate) fn apply_delta(points: &mut BTreeMap<u64, [f64; 3]>, delta: &PointCloudMessage) {
     for id in &delta.remove {
         points.remove(id);
     }
@@ -370,7 +370,7 @@ fn apply_delta(points: &mut BTreeMap<u64, [f64; 3]>, delta: &PointCloudMessage) 
     }
 }
 
-fn write_ply(
+pub(crate) fn write_ply(
     writer: &mut dyn Write,
     safe_session: &str,
     points: &BTreeMap<u64, [f64; 3]>,
@@ -389,7 +389,7 @@ fn write_ply(
     Ok(())
 }
 
-fn create_directory(path: &Path) -> Result<(), RecordingError> {
+pub(crate) fn create_directory(path: &Path) -> Result<(), RecordingError> {
     fs::create_dir_all(path).map_err(|source| RecordingError::Io {
         operation: "create directory",
         path: path.to_owned(),
@@ -421,7 +421,7 @@ fn create_session_directory(root: &Path, session: &str) -> Result<PathBuf, Recor
     unreachable!("u64 session-directory suffixes cannot be exhausted")
 }
 
-fn sanitize_session(session: &str) -> String {
+pub(crate) fn sanitize_session(session: &str) -> String {
     let sanitized: String = session
         .chars()
         .map(|character| {
@@ -440,7 +440,7 @@ fn sanitize_session(session: &str) -> String {
     }
 }
 
-fn write_atomic(
+pub(crate) fn write_atomic(
     destination: &Path,
     write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
 ) -> Result<(), RecordingError> {

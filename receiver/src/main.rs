@@ -11,6 +11,8 @@ use std::{
 use clap::Parser;
 use slam_receiver::{
     PROTOCOL_V1_TOPIC_PREFIX,
+    clip::ClipRecorder,
+    control::handle_control_request,
     coordinates::prepare_telemetry_for_unity,
     decode_multipart,
     protocol::{TelemetryMessage, parse_telemetry},
@@ -21,6 +23,8 @@ use slam_receiver::{
 
 const DEFAULT_INPUT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
 const DEFAULT_OUTPUT_ENDPOINT: &str = "tcp://127.0.0.1:5556";
+const DEFAULT_CONTROL_ENDPOINT: &str = "tcp://127.0.0.1:5557";
+const DEFAULT_RECORD_DIRECTORY: &str = "recordings";
 const RECEIVE_TIMEOUT_MS: i32 = 250;
 const SETTINGS_REPEAT_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -39,9 +43,13 @@ struct Cli {
     #[arg(long, default_value = DEFAULT_OUTPUT_ENDPOINT)]
     output_endpoint: String,
 
-    /// Directory in which accepted telemetry sessions are recorded
-    #[arg(long)]
-    record_dir: Option<PathBuf>,
+    /// Local ZeroMQ REP endpoint to bind for Unity clip controls
+    #[arg(long, default_value = DEFAULT_CONTROL_ENDPOINT)]
+    control_endpoint: String,
+
+    /// Directory in which accepted telemetry sessions and clips are recorded
+    #[arg(long, default_value = DEFAULT_RECORD_DIRECTORY)]
+    record_dir: PathBuf,
 }
 
 fn main() {
@@ -59,12 +67,15 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     subscriber.set_linger(0)?;
     subscriber.set_subscribe(PROTOCOL_V1_TOPIC_PREFIX.as_bytes())?;
-    subscriber.set_rcvtimeo(RECEIVE_TIMEOUT_MS)?;
     subscriber.connect(&cli.endpoint)?;
 
     let publisher = context.socket(zmq::PUB)?;
     publisher.set_linger(0)?;
     publisher.bind(&cli.output_endpoint)?;
+
+    let control = context.socket(zmq::REP)?;
+    control.set_linger(0)?;
+    control.bind(&cli.control_endpoint)?;
 
     let running = Arc::new(AtomicBool::new(true));
     let running_for_handler = Arc::clone(&running);
@@ -76,12 +87,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("receiver connected to {}", cli.endpoint);
     println!("subscribed to {PROTOCOL_V1_TOPIC_PREFIX}");
     println!("publishing Unity telemetry to {}", cli.output_endpoint);
-    if let Some(record_dir) = &cli.record_dir {
-        println!(
-            "recording telemetry sessions under {}",
-            record_dir.display()
-        );
-    }
+    println!("serving Unity clip controls on {}", cli.control_endpoint);
+    println!(
+        "recording telemetry sessions and clips under {}",
+        cli.record_dir.display()
+    );
     println!("press Ctrl-C to stop");
 
     let mut received_count = 0_u64;
@@ -91,7 +101,8 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut quaternion_continuity = QuaternionContinuity::new();
     let mut settings_repeater = SettingsRepeater::new(SETTINGS_REPEAT_INTERVAL);
     let mut session_gate = SessionGate::new();
-    let recorder = cli.record_dir.map(TelemetryRecorder::start);
+    let recorder = TelemetryRecorder::start(cli.record_dir.clone());
+    let clip_recorder = ClipRecorder::start(cli.record_dir);
 
     while running.load(Ordering::SeqCst) {
         if let Some(settings) = settings_repeater.take_due(Instant::now()) {
@@ -103,12 +114,26 @@ fn run() -> Result<(), Box<dyn Error>> {
             );
         }
 
-        let frames = match subscriber.recv_multipart(0) {
-            Ok(frames) => frames,
-            Err(zmq::Error::EAGAIN) => continue,
+        let mut poll_items = [
+            subscriber.as_poll_item(zmq::POLLIN),
+            control.as_poll_item(zmq::POLLIN),
+        ];
+        match zmq::poll(&mut poll_items, i64::from(RECEIVE_TIMEOUT_MS)) {
+            Ok(_) => {}
             Err(zmq::Error::EINTR) => continue,
             Err(error) => return Err(error.into()),
-        };
+        }
+
+        if poll_items[1].is_readable() {
+            let request = control.recv_bytes(0)?;
+            let response = handle_control_request(&request, &clip_recorder);
+            control.send(serde_json::to_vec(&response)?, 0)?;
+        }
+
+        if !poll_items[0].is_readable() {
+            continue;
+        }
+        let frames = subscriber.recv_multipart(0)?;
 
         match decode_multipart(&frames) {
             Ok(packet) => match parse_telemetry(&packet.topic, &packet.payload) {
@@ -141,9 +166,8 @@ fn run() -> Result<(), Box<dyn Error>> {
                     received_count += 1;
                     log_received(&message);
 
-                    if let Some(recorder) = &recorder {
-                        recorder.record(&message)?;
-                    }
+                    recorder.record(&message)?;
+                    clip_recorder.observe(&message)?;
 
                     match encode_telemetry(&message) {
                         Ok(telemetry) => {
@@ -178,19 +202,27 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if let Some(recorder) = recorder {
-        for summary in recorder.finish()? {
-            println!(
-                "recording finalized: session={} messages={} poses={} pointcloud_messages={} \
-                 points={} directory={}",
-                summary.session,
-                summary.message_count,
-                summary.pose_count,
-                summary.pointcloud_message_count,
-                summary.point_count,
-                summary.directory.display()
-            );
-        }
+    for summary in clip_recorder.finish()? {
+        println!(
+            "clip finalized: session={} messages={} interval_messages={} points={} directory={}",
+            summary.session,
+            summary.message_count,
+            summary.interval_message_count,
+            summary.point_count,
+            summary.directory.display()
+        );
+    }
+    for summary in recorder.finish()? {
+        println!(
+            "recording finalized: session={} messages={} poses={} pointcloud_messages={} \
+             points={} directory={}",
+            summary.session,
+            summary.message_count,
+            summary.pose_count,
+            summary.pointcloud_message_count,
+            summary.point_count,
+            summary.directory.display()
+        );
     }
 
     println!(
@@ -251,7 +283,8 @@ mod tests {
         let cli = Cli::parse_from(["slam-receiver"]);
         assert_eq!(cli.endpoint, DEFAULT_INPUT_ENDPOINT);
         assert_eq!(cli.output_endpoint, DEFAULT_OUTPUT_ENDPOINT);
-        assert_eq!(cli.record_dir, None);
+        assert_eq!(cli.control_endpoint, DEFAULT_CONTROL_ENDPOINT);
+        assert_eq!(cli.record_dir, PathBuf::from(DEFAULT_RECORD_DIRECTORY));
     }
 
     #[test]
@@ -272,6 +305,17 @@ mod tests {
     fn parses_recording_directory() {
         let cli = Cli::parse_from(["slam-receiver", "--record-dir", "recordings/demo"]);
 
-        assert_eq!(cli.record_dir, Some(PathBuf::from("recordings/demo")));
+        assert_eq!(cli.record_dir, PathBuf::from("recordings/demo"));
+    }
+
+    #[test]
+    fn parses_control_endpoint() {
+        let cli = Cli::parse_from([
+            "slam-receiver",
+            "--control-endpoint",
+            "tcp://127.0.0.1:6001",
+        ]);
+
+        assert_eq!(cli.control_endpoint, "tcp://127.0.0.1:6001");
     }
 }
