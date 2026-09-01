@@ -20,23 +20,24 @@ native Intel process reports `x86_64` and uses `/usr/local`. Do not link arm64
 objects against x86_64 Homebrew libraries or silently build part of the stack
 under Rosetta.
 
-The host audited for Issue #21 currently reports:
+The host baseline from Issue #21, reverified after the native-toolchain migration
+for Issue #62, currently reports:
 
 | Property | Observed value | Required action |
 |---|---|---|
-| Kernel process architecture | `arm64` | Treat this as Apple Silicon unless the physical machine evidence says otherwise |
+| Kernel process architecture | `arm64` | Keep terminal and build processes native; do not launch them through Rosetta |
 | macOS | `15.6.1` (`24G90`) | Record changes when upgrading |
 | Compiler | Apple Clang 17 | Keep C++ dependencies on the same compiler/standard library |
-| Homebrew prefix | `/usr/local` | Replace or explicitly isolate this Intel/Rosetta installation before native builds |
-| Homebrew CMake/pkg-config | `x86_64` | Do not use them in an arm64 ORB-SLAM3 build |
-| Camera inventory | none reported | Resolve device visibility/privacy before live-capture work |
-| OpenCV/Eigen/Pangolin | not discoverable in the active pkg-config/CMake paths | Install only after the architecture is resolved |
+| Rust host | `aarch64-apple-darwin` | Keep the rustup toolchain native |
+| Homebrew prefix | `/opt/homebrew` | Keep `/usr/local` Intel packages out of native build discovery |
+| Homebrew pkg-config | `/opt/homebrew/bin/pkg-config` | Confirm discovered libraries are arm64 before linking |
+| ZeroMQ | `/opt/homebrew/opt/zeromq/lib` (`arm64`) | Available for native tools that use the system library; the Rust Sender uses its pinned source build |
 
-The reported `arm64` host conflicts with the earlier description of this
-machine as an Intel MacBook Air. Use measured architecture, not the model name,
-for build decisions. If this repository is moved to the Intel Mac, rerun the
-diagnostic there and update only the observed-host table in that machine's
-Issue evidence.
+The host was migrated from an Intel/Rosetta Homebrew installation to native
+Apple Silicon tooling. Use measured process and library architectures, not a
+machine description, for build decisions. If this repository is moved to an
+Intel Mac, rerun the diagnostic there and record that machine's results in its
+Issue evidence rather than adding a fallback path to this setup.
 
 ## Expected dependency boundary
 
