@@ -88,6 +88,7 @@ An Issue is done when:
 - #54 Add four cardinal camera view presets to the Unity Viewer.
 - #57 Add frame-all telemetry camera control to the Unity Viewer.
 - #59 Add a keyboard shortcuts help overlay to the Unity Viewer.
+- #61 Add Unity-controlled telemetry clip recording.
 
 Future work receives its number when the GitHub Issue is created:
 
@@ -785,6 +786,50 @@ Suggested branch:
 
 ```text
 feature/59-unity-controls-help-overlay
+```
+
+## Issue 61: Unity-controlled telemetry clip recording
+
+Goal: continuously retain accepted telemetry on the Unity-side Receiver and
+mark independent, replayable clip intervals from the Viewer.
+
+Implemented behavior:
+
+- enable full-session Receiver recording by default;
+- expose a local ZeroMQ request/reply endpoint for start, stop, and status
+  commands;
+- keep clip state and file generation on a dedicated worker;
+- bootstrap every clip with active Settings, the latest camera Pose, and a
+  complete retained point-cloud snapshot;
+- preserve interval Pose and PointCloud messages in arrival order;
+- write source boundaries, telemetry times, counts, and output filenames to
+  clip metadata;
+- export the clip's final retained point cloud as PLY;
+- display Start/Stop controls and idle, recording, finalizing, completed, and
+  failed states in Unity;
+- keep output compatible with `slam-session-player`.
+
+Acceptance criteria:
+
+- full-session recording remains independent of clip capture;
+- starting does not clear or restart telemetry state;
+- stopping produces a standalone replayable directory;
+- replay begins with the marked camera Pose and point-cloud state;
+- interval changes retain their source order;
+- multiple non-overlapping clips can be created in one session;
+- Unity displays elapsed time, message count, and completed output path;
+- recording, clip generation, and control requests do not block telemetry file
+  output or Unity publication;
+- invalid commands and clip file failures are reported without terminating the
+  Receiver or Viewer;
+- automated tests cover boundaries, initial state, deltas, metadata, control
+  parsing, and UI state transitions;
+- no files below `sender/camera` or `sender/slam` are changed.
+
+Suggested branch:
+
+```text
+feature/61-unity-telemetry-clips
 ```
 
 ## Local development order

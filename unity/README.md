@@ -208,3 +208,23 @@ configurable in the Inspector. The displayed keyboard shortcuts are read from
 `OrbitCameraController` and `VisualizationVisibilityController`, so configured
 key changes are reflected in the help text. The help and diagnostics panels can
 remain visible at the same time.
+
+## Telemetry clip recording controls
+
+The default `Viewer` scene includes `ClipRecordingControlBehaviour` on the
+`Telemetry` GameObject. Start the Receiver, enter Play Mode, and use `Start
+Clip` and `Stop Clip` in the panel. The panel displays `Idle`, `Recording`,
+`Finalizing`, `Completed`, or `Failed`, together with the active session,
+elapsed telemetry time, interval message count, completed output path, and the
+latest error.
+
+The Receiver continues recording the full session while a clip is active.
+Starting a clip does not clear the Viewer, trajectory, or retained point cloud.
+The completed path is a standalone recording that can be replayed with
+`slam-session-player`. Pointer camera input is ignored over the clip-control
+panel; all keyboard Viewer shortcuts remain available.
+
+The control endpoint defaults to `tcp://127.0.0.1:5557`. The client runs on a
+background thread and polls Receiver status without blocking the Unity main
+thread. If the Receiver is unavailable, the panel enters `Failed` and continues
+polling so it can recover after the Receiver starts.

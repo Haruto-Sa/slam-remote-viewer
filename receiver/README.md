@@ -2,7 +2,8 @@
 
 `slam-receiver` connects to a ZeroMQ PUB endpoint and receives Protocol v1
 telemetry as a SUB client. It validates and converts accepted telemetry, then
-republishes it from a local PUB endpoint for Unity.
+republishes it from a local PUB endpoint for Unity. It also binds a local REP
+endpoint through which Unity marks standalone clip boundaries.
 
 Each message must contain exactly two multipart frames:
 
@@ -53,12 +54,14 @@ cargo run \
   -- \
   --endpoint 'tcp://127.0.0.1:5555' \
   --output-endpoint 'tcp://127.0.0.1:5556' \
+  --control-endpoint 'tcp://127.0.0.1:5557' \
   --record-dir recordings
 ```
 
-Both shown endpoints are defaults, so either option can be omitted. The input
-endpoint connects to the Sender; the output endpoint binds locally for Unity.
-Recording is disabled when `--record-dir` is omitted.
+All shown values are defaults and can be omitted. The input endpoint connects
+to the Sender, the output endpoint publishes telemetry to Unity, and the
+control endpoint accepts Unity clip commands. Full-session recording is always
+enabled and defaults to `recordings`.
 
 Press Ctrl-C to stop cleanly.
 
@@ -132,6 +135,37 @@ PLY and metadata files are written through temporary files and renamed only
 after a successful flush. File errors include the failed operation and path;
 the Receiver exits unsuccessfully when requested recording cannot be
 finalized.
+
+## Unity-controlled telemetry clips
+
+The Receiver continuously records the complete accepted session independently
+of clip capture. Unity sends `start_clip`, `stop_clip`, and `status` JSON
+commands to the local control endpoint. Commands are queued to a dedicated clip
+worker so clip finalization does not block telemetry reception or publication.
+
+`Start Clip` snapshots the active Settings, latest camera Pose, and complete
+retained point cloud. Subsequent Pose and PointCloud messages are retained until
+`Stop Clip`. The resulting standalone directory is written beneath
+`recordings/clips/`:
+
+```text
+recordings/
+├── receiver-test/
+│   └── ... full-session files ...
+└── clips/
+    └── receiver-test-clip-001/
+        ├── telemetry.ndjson
+        ├── pointcloud.ply
+        └── metadata.json
+```
+
+Clip metadata includes the source session, inclusive start and exclusive end
+message indices, source telemetry start/end times, interval message count, and
+the standard recording statistics. Additional metadata fields are ignored by
+the existing player, so the clip directory can be passed directly to
+`slam-session-player`. Starting before Settings and a Pose are available fails
+without stopping the Receiver. Overlapping clips are rejected; a completed or
+failed clip can be followed by another clip in the same session.
 
 ## Replay a recorded session into Unity
 
