@@ -873,6 +873,48 @@ Suggested branch:
 feature/66-crash-recoverable-recordings
 ```
 
+## Issue 69: Safe Receiver recording retention
+
+Goal: prevent continuous full-session and clip recordings from consuming
+unlimited disk space without risking active, incomplete, or unknown data.
+
+Implemented behavior:
+
+- keep retention disabled unless a maximum total size or maximum age is
+  configured;
+- apply optional combined byte and whole-day age limits to finalized full
+  sessions and clips;
+- process candidates from oldest to newest with path-based tie breaking;
+- run retention after startup recovery and after each recording or clip is
+  finalized;
+- provide a dry-run mode that logs candidates without deleting them;
+- protect active checkpoints, recovery failures, missing or malformed
+  metadata, missing output files, and symlinked paths;
+- revalidate metadata and canonical paths immediately before removal;
+- log removed or proposed directories, byte counts, reasons, totals, and
+  failures;
+- continue processing other recordings and receiving telemetry after a
+  retention failure.
+
+Acceptance criteria:
+
+- default Receiver behavior never deletes recordings;
+- age and size limits apply deterministically to both recording types;
+- dry-run mode makes no filesystem changes;
+- in-progress and unrecognized directories remain intact;
+- symlink targets and paths outside the configured recording root are never
+  deleted;
+- startup recovery completes before retention is evaluated;
+- automated tests cover limits, ordering, dry-run behavior, protected data,
+  malformed metadata, symlink safety, and post-finalization execution;
+- Protocol v1 and files below `sender/camera` and `sender/slam` are unchanged.
+
+Suggested branch:
+
+```text
+feature/69-recording-retention
+```
+
 ## Local development order
 
 Run and verify components from left to right:

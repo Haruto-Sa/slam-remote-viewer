@@ -19,6 +19,7 @@ use slam_receiver::{
     publisher::{EncodedTelemetry, SettingsRepeater, encode_telemetry, publish_encoded},
     quaternion::QuaternionContinuity,
     recording::{SessionGate, TelemetryRecorder, recover_incomplete_recordings},
+    retention::{RetentionManager, RetentionPolicy},
 };
 
 const DEFAULT_INPUT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
@@ -50,6 +51,18 @@ struct Cli {
     /// Directory in which accepted telemetry sessions and clips are recorded
     #[arg(long, default_value = DEFAULT_RECORD_DIRECTORY)]
     record_dir: PathBuf,
+
+    /// Maximum combined size in bytes for finalized recordings and clips
+    #[arg(long, value_parser = parse_positive_u64)]
+    retention_max_bytes: Option<u64>,
+
+    /// Maximum age in whole days for finalized recordings and clips
+    #[arg(long, value_parser = parse_retention_days)]
+    retention_max_age_days: Option<u64>,
+
+    /// Report retention candidates without deleting them
+    #[arg(long)]
+    retention_dry_run: bool,
 }
 
 fn main() {
@@ -87,6 +100,18 @@ fn run() -> Result<(), Box<dyn Error>> {
             failure.reason
         );
     }
+
+    let retention = RetentionManager::new(
+        cli.record_dir.clone(),
+        RetentionPolicy {
+            max_total_bytes: cli.retention_max_bytes,
+            max_age: cli
+                .retention_max_age_days
+                .map(|days| Duration::from_secs(days * 24 * 60 * 60)),
+            dry_run: cli.retention_dry_run,
+        },
+    );
+    retention.apply_and_log("startup");
 
     let context = zmq::Context::new();
     let subscriber = context.socket(zmq::SUB)?;
@@ -127,8 +152,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut quaternion_continuity = QuaternionContinuity::new();
     let mut settings_repeater = SettingsRepeater::new(SETTINGS_REPEAT_INTERVAL);
     let mut session_gate = SessionGate::new();
-    let recorder = TelemetryRecorder::start(cli.record_dir.clone());
-    let clip_recorder = ClipRecorder::start(cli.record_dir);
+    let recorder =
+        TelemetryRecorder::start_with_retention(cli.record_dir.clone(), retention.clone());
+    let clip_recorder = ClipRecorder::start_with_retention(cli.record_dir, retention);
 
     while running.load(Ordering::SeqCst) {
         if let Some(settings) = settings_repeater.take_due(Instant::now()) {
@@ -300,6 +326,26 @@ fn log_received(message: &TelemetryMessage) {
     }
 }
 
+fn parse_positive_u64(value: &str) -> Result<u64, String> {
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|error| format!("invalid positive integer {value:?}: {error}"))?;
+    if parsed == 0 {
+        Err("value must be greater than zero".to_owned())
+    } else {
+        Ok(parsed)
+    }
+}
+
+fn parse_retention_days(value: &str) -> Result<u64, String> {
+    let days = parse_positive_u64(value)?;
+    if days > u64::MAX / (24 * 60 * 60) {
+        Err("retention age is too large".to_owned())
+    } else {
+        Ok(days)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,6 +357,9 @@ mod tests {
         assert_eq!(cli.output_endpoint, DEFAULT_OUTPUT_ENDPOINT);
         assert_eq!(cli.control_endpoint, DEFAULT_CONTROL_ENDPOINT);
         assert_eq!(cli.record_dir, PathBuf::from(DEFAULT_RECORD_DIRECTORY));
+        assert_eq!(cli.retention_max_bytes, None);
+        assert_eq!(cli.retention_max_age_days, None);
+        assert!(!cli.retention_dry_run);
     }
 
     #[test]
@@ -343,5 +392,27 @@ mod tests {
         ]);
 
         assert_eq!(cli.control_endpoint, "tcp://127.0.0.1:6001");
+    }
+
+    #[test]
+    fn parses_retention_options() {
+        let cli = Cli::parse_from([
+            "slam-receiver",
+            "--retention-max-bytes",
+            "1048576",
+            "--retention-max-age-days",
+            "30",
+            "--retention-dry-run",
+        ]);
+
+        assert_eq!(cli.retention_max_bytes, Some(1_048_576));
+        assert_eq!(cli.retention_max_age_days, Some(30));
+        assert!(cli.retention_dry_run);
+    }
+
+    #[test]
+    fn rejects_zero_retention_limits() {
+        assert!(Cli::try_parse_from(["slam-receiver", "--retention-max-bytes", "0"]).is_err());
+        assert!(Cli::try_parse_from(["slam-receiver", "--retention-max-age-days", "0"]).is_err());
     }
 }
