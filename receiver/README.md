@@ -112,6 +112,7 @@ recording from being overwritten:
 ```text
 recordings/
 └── receiver-test/
+    ├── recording.inprogress.json
     ├── telemetry.ndjson
     ├── pointcloud.ply
     └── metadata.json
@@ -123,7 +124,8 @@ recordings/
   `unity_world` coordinates. Positions are emitted in ascending point-ID order;
   IDs are used for state management but are not exported as a PLY property.
 - `metadata.json` records the protocol version, session, coordinate frame and
-  unit, message counts, final point count, and output filenames.
+  unit, message counts, final point count, output filenames, and whether the
+  recording was finalized cleanly or recovered after an interruption.
 
 Point-cloud operations are applied in Protocol v1 order: remove, update, then
 add. Unknown updates add a point, existing adds replace its position, and
@@ -131,10 +133,36 @@ unknown removals are no-ops. A new Settings session finalizes the previous
 recording and starts with empty point state. Ctrl-C drains the recording queue
 and finalizes the active session before the Receiver exits.
 
-PLY and metadata files are written through temporary files and renamed only
-after a successful flush. File errors include the failed operation and path;
-the Receiver exits unsuccessfully when requested recording cannot be
-finalized.
+PLY, metadata, and checkpoint files are written through temporary files and
+renamed only after a successful flush. File errors include the failed
+operation and path; the Receiver exits unsuccessfully when requested recording
+cannot be finalized.
+
+### Crash recovery
+
+While a full session is active, the recording worker flushes and synchronizes
+`telemetry.ndjson` at least once per second or every 64 messages. It then
+atomically updates `recording.inprogress.json` with the durable message count.
+A clean finalization writes `metadata.json` with `finalization: "clean"` and
+removes the checkpoint.
+
+At startup, before opening network sockets, the Receiver scans immediate
+session directories beneath `--record-dir` for incomplete checkpoints. It
+validates every complete NDJSON line, reconstructs message counts and retained
+point state, and writes:
+
+- `telemetry.recovered.ndjson`, containing the valid complete prefix;
+- a rebuilt `pointcloud.ply`;
+- `metadata.json` with `finalization: "recovered"` and the number of discarded
+  trailing bytes.
+
+Only a final line without its terminating newline is treated as a torn write
+and discarded. A malformed complete line fails recovery and reports its path
+and line number. The original `telemetry.ndjson` is never modified, so failed
+or partial recovery remains inspectable and retryable. Existing finalized
+metadata is never overwritten, clip directories are excluded from startup
+recovery, and a successfully recovered directory is skipped on later starts.
+Recovered directories remain compatible with `slam-session-player`.
 
 ## Unity-controlled telemetry clips
 
