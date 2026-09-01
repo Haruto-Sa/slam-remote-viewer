@@ -55,13 +55,16 @@ cargo run \
   --endpoint 'tcp://127.0.0.1:5555' \
   --output-endpoint 'tcp://127.0.0.1:5556' \
   --control-endpoint 'tcp://127.0.0.1:5557' \
-  --record-dir recordings
+  --record-dir recordings \
+  --retention-max-bytes 10737418240 \
+  --retention-max-age-days 30
 ```
 
-All shown values are defaults and can be omitted. The input endpoint connects
-to the Sender, the output endpoint publishes telemetry to Unity, and the
-control endpoint accepts Unity clip commands. Full-session recording is always
-enabled and defaults to `recordings`.
+The endpoint and recording-directory values shown above are defaults. Retention
+limits are optional and disabled unless at least one limit is supplied. The
+input endpoint connects to the Sender, the output endpoint publishes telemetry
+to Unity, and the control endpoint accepts Unity clip commands. Full-session
+recording is always enabled and defaults to `recordings`.
 
 Press Ctrl-C to stop cleanly.
 
@@ -163,6 +166,38 @@ or partial recovery remains inspectable and retryable. Existing finalized
 metadata is never overwritten, clip directories are excluded from startup
 recovery, and a successfully recovered directory is skipped on later starts.
 Recovered directories remain compatible with `slam-session-player`.
+
+## Recording retention
+
+Continuous recording retention is opt-in. Use `--retention-max-bytes` to limit
+the combined size of finalized full sessions and clips, and
+`--retention-max-age-days` to remove finalized recordings older than a whole
+number of days. When both are set, age-expired recordings are processed first,
+then the oldest remaining recordings are processed until the size limit is
+met. Metadata modification time is used as the finalization time; equal times
+are ordered by directory path.
+
+Retention runs after crash recovery during startup and after each full session
+or clip is finalized. Every removal logs its directory, size, and reason. Add
+`--retention-dry-run` with one or both limits to print the same decisions
+without deleting anything:
+
+```bash
+cargo run --manifest-path receiver/Cargo.toml -- \
+  --record-dir recordings \
+  --retention-max-bytes 10737418240 \
+  --retention-max-age-days 30 \
+  --retention-dry-run
+```
+
+Only directories with valid finalized metadata and regular telemetry and PLY
+files are eligible. Active or incomplete sessions containing
+`recording.inprogress.json`, recovery failures, missing or malformed metadata,
+and symlinked recording paths are preserved. The scanner does not follow
+symlinks, revalidates each path immediately before removal, and never removes
+anything outside the configured recording root. An inspection or removal
+failure is logged and does not stop telemetry reception or processing of other
+eligible recordings.
 
 ## Unity-controlled telemetry clips
 

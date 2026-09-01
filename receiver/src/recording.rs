@@ -19,6 +19,7 @@ use crate::{
         POINTCLOUD_TOPIC, POSE_TOPIC, PointCloudMessage, PoseMessage, SETTINGS_TOPIC,
         SettingsMessage, TelemetryMessage,
     },
+    retention::RetentionManager,
 };
 
 const CHECKPOINT_FILE: &str = "recording.inprogress.json";
@@ -194,9 +195,16 @@ pub struct TelemetryRecorder {
 
 impl TelemetryRecorder {
     pub fn start(root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
+        Self::start_internal(root.into(), None)
+    }
+
+    pub fn start_with_retention(root: impl Into<PathBuf>, retention: RetentionManager) -> Self {
+        Self::start_internal(root.into(), Some(retention))
+    }
+
+    fn start_internal(root: PathBuf, retention: Option<RetentionManager>) -> Self {
         let (sender, receiver) = mpsc::channel();
-        let worker = thread::spawn(move || record_messages(&root, receiver));
+        let worker = thread::spawn(move || record_messages(&root, receiver, retention.as_ref()));
 
         Self {
             sender: Some(sender),
@@ -225,6 +233,7 @@ impl TelemetryRecorder {
 fn record_messages(
     root: &Path,
     receiver: mpsc::Receiver<TelemetryMessage>,
+    retention: Option<&RetentionManager>,
 ) -> Result<Vec<RecordingSummary>, RecordingError> {
     let mut active: Option<SessionRecording> = None;
     let mut summaries = Vec::new();
@@ -238,7 +247,7 @@ fn record_messages(
                         .is_none_or(|recording| recording.session != settings.session)
                 {
                     if let Some(recording) = active.take() {
-                        summaries.push(recording.finish()?);
+                        finalize_recording(recording, retention, &mut summaries)?;
                     }
                     active = Some(SessionRecording::start(root, settings)?);
                 }
@@ -259,10 +268,23 @@ fn record_messages(
     }
 
     if let Some(recording) = active {
-        summaries.push(recording.finish()?);
+        finalize_recording(recording, retention, &mut summaries)?;
     }
 
     Ok(summaries)
+}
+
+fn finalize_recording(
+    recording: SessionRecording,
+    retention: Option<&RetentionManager>,
+    summaries: &mut Vec<RecordingSummary>,
+) -> Result<(), RecordingError> {
+    let summary = recording.finish()?;
+    summaries.push(summary);
+    if let Some(retention) = retention {
+        retention.apply_and_log("recording-finalized");
+    }
+    Ok(())
 }
 
 struct SessionRecording {
@@ -1033,6 +1055,7 @@ mod tests {
     use crate::{
         playback,
         protocol::{POINTCLOUD_TOPIC, POSE_TOPIC, SETTINGS_TOPIC, parse_telemetry},
+        retention::{RetentionManager, RetentionPolicy},
     };
 
     const SETTINGS: &str = include_str!("../../protocol/settings.example.json");
@@ -1403,6 +1426,27 @@ mod tests {
         assert!(report.already_finalized.is_empty());
         assert!(report.failures.is_empty());
         assert!(marker.exists());
+    }
+
+    #[test]
+    fn applies_retention_after_full_session_finalization() {
+        let root = TestDirectory::new("retention-finalization");
+        let retention = RetentionManager::new(
+            &root.0,
+            RetentionPolicy {
+                max_total_bytes: Some(1),
+                ..RetentionPolicy::default()
+            },
+        );
+        let recorder = TelemetryRecorder::start_with_retention(&root.0, retention);
+        recorder.record(&settings("retained")).expect("settings");
+
+        let summary = recorder
+            .finish()
+            .expect("recording should finish")
+            .remove(0);
+
+        assert!(!summary.directory.exists());
     }
 
     #[test]

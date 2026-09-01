@@ -6,6 +6,7 @@ pub mod protocol;
 pub mod publisher;
 pub mod quaternion;
 pub mod recording;
+pub mod retention;
 
 use std::fmt;
 

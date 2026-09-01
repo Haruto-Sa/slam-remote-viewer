@@ -20,6 +20,7 @@ use crate::{
         RecordingError, apply_delta, create_directory, sanitize_session, write_atomic, write_ply,
         write_recorded_message,
     },
+    retention::RetentionManager,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -100,11 +101,19 @@ pub struct ClipRecorder {
 
 impl ClipRecorder {
     pub fn start(root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
+        Self::start_internal(root.into(), None)
+    }
+
+    pub fn start_with_retention(root: impl Into<PathBuf>, retention: RetentionManager) -> Self {
+        Self::start_internal(root.into(), Some(retention))
+    }
+
+    fn start_internal(root: PathBuf, retention: Option<RetentionManager>) -> Self {
         let (sender, receiver) = mpsc::channel();
         let status = Arc::new(Mutex::new(ClipStatus::default()));
         let worker_status = Arc::clone(&status);
-        let worker = thread::spawn(move || run_worker(&root, receiver, &worker_status));
+        let worker =
+            thread::spawn(move || run_worker(&root, receiver, &worker_status, retention.as_ref()));
         Self {
             sender: Some(sender),
             status,
@@ -296,6 +305,7 @@ fn run_worker(
     root: &Path,
     receiver: mpsc::Receiver<ClipWorkerCommand>,
     status: &Arc<Mutex<ClipStatus>>,
+    retention: Option<&RetentionManager>,
 ) -> Vec<ClipSummary> {
     let mut source = SourceState::default();
     let mut active: Option<ClipDraft> = None;
@@ -311,7 +321,7 @@ fn run_worker(
                 );
                 if session_changed {
                     if active.is_some() {
-                        finalize_active(root, &mut active, status, &mut summaries);
+                        finalize_active(root, &mut active, status, &mut summaries, retention);
                     }
                     source = SourceState::default();
                 }
@@ -332,13 +342,13 @@ fn run_worker(
                 Err(reason) => set_failed(status, reason.to_owned(), source.session()),
             },
             ClipWorkerCommand::Stop => {
-                finalize_active(root, &mut active, status, &mut summaries);
+                finalize_active(root, &mut active, status, &mut summaries, retention);
             }
         }
     }
 
     if active.is_some() {
-        finalize_active(root, &mut active, status, &mut summaries);
+        finalize_active(root, &mut active, status, &mut summaries, retention);
     }
     summaries
 }
@@ -348,6 +358,7 @@ fn finalize_active(
     active: &mut Option<ClipDraft>,
     status: &Arc<Mutex<ClipStatus>>,
     summaries: &mut Vec<ClipSummary>,
+    retention: Option<&RetentionManager>,
 ) {
     let Some(draft) = active.take() else {
         set_failed(status, "no clip is currently recording".to_owned(), None);
@@ -359,6 +370,9 @@ fn finalize_active(
         Ok(summary) => {
             set_completed_status(status, &summary);
             summaries.push(summary);
+            if let Some(retention) = retention {
+                retention.apply_and_log("clip-finalized");
+            }
         }
         Err(error) => set_failed(status, error.to_string(), None),
     }
@@ -541,6 +555,7 @@ mod tests {
     use crate::{
         playback::load_session,
         protocol::{CameraSettings, PoseState},
+        retention::{RetentionManager, RetentionPolicy},
     };
 
     static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -624,6 +639,29 @@ mod tests {
         let ply = fs::read_to_string(summaries[0].directory.join("pointcloud.ply")).expect("PLY");
         assert!(ply.contains("element vertex 2"));
         assert!(ply.ends_with("4 5 6\n8 8 8\n"));
+    }
+
+    #[test]
+    fn applies_retention_after_clip_finalization() {
+        let root = TestDirectory::new("retention-finalization");
+        let retention = RetentionManager::new(
+            &root.0,
+            RetentionPolicy {
+                max_total_bytes: Some(1),
+                ..RetentionPolicy::default()
+            },
+        );
+        let recorder = ClipRecorder::start_with_retention(&root.0, retention);
+        recorder.observe(&settings("source")).expect("settings");
+        recorder
+            .observe(&pose("source", 1, 10.0, 1.0))
+            .expect("pose");
+        recorder.start_clip().expect("start clip");
+        recorder.stop_clip().expect("stop clip");
+
+        let summary = recorder.finish().expect("worker should finish").remove(0);
+
+        assert!(!summary.directory.exists());
     }
 
     #[test]
