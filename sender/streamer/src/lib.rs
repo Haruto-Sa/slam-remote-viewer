@@ -2,6 +2,7 @@ use std::{error::Error, fmt};
 
 use serde::Serialize;
 
+pub mod live_slam_input;
 pub mod pose_source;
 pub mod slam_boundary;
 
