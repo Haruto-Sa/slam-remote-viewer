@@ -38,6 +38,10 @@ frame or `Tcw` must adapt it before constructing `SlamPose`. The Mock Sender
 uses `MockPoseSource` through the same interface intended for a future real
 SLAM backend.
 
+The versioned local process contract for a C++ producer is defined in
+[`../../docs/slam-streamer-boundary.md`](../../docs/slam-streamer-boundary.md).
+It deliberately stops before Protocol v1 serialization and network publishing.
+
 ## Requirements
 
 - Rust stable toolchain

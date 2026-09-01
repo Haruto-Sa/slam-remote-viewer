@@ -3,6 +3,7 @@ use std::{error::Error, fmt};
 use serde::Serialize;
 
 pub mod pose_source;
+pub mod slam_boundary;
 
 use pose_source::{SlamPose, SlamTrackingState};
 
