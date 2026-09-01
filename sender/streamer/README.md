@@ -43,8 +43,36 @@ SLAM backend.
 - Rust stable toolchain
 - A C/C++ compiler for the bundled libzmq source build
 
-The first Cargo build can take longer because `zmq-sys` builds libzmq when a
-compatible system installation is unavailable.
+The pinned `zmq` 0.10.0 dependency uses `zmq-sys` 0.12.0, which builds its
+pinned libzmq source through `zeromq-src`. The Sender therefore does not need a
+repository-specific `PKG_CONFIG_PATH`, a Homebrew ZeroMQ dylib, or a patched
+`rust-zmq` checkout. The first Cargo build can take longer while that native
+dependency is compiled.
+
+### Apple Silicon verification
+
+Use an arm64 shell and Rust toolchain throughout the build. Homebrew tools, when
+needed for other SLAM dependencies, must come from `/opt/homebrew`; do not add a
+repository-local absolute-path override to compensate for an Intel/Rosetta
+shell.
+
+Run a clean locked build from the repository root:
+
+```bash
+test "$(uname -m)" = arm64
+test "$(rustc -vV | sed -n 's/^host: //p')" = aarch64-apple-darwin
+cargo clean --manifest-path sender/streamer/Cargo.toml
+cargo build --locked --manifest-path sender/streamer/Cargo.toml
+cargo test --locked --manifest-path sender/streamer/Cargo.toml
+file sender/streamer/target/debug/slam-mock-sender
+otool -L sender/streamer/target/debug/slam-mock-sender
+```
+
+`file` must report a Mach-O `arm64` executable. With the currently pinned Rust
+dependencies, `otool -L` must not report a Homebrew `libzmq` dylib; libzmq is
+linked from the native source build instead. An `/usr/local` or x86_64 library
+in the output is an architecture error, not a condition to hide with a fallback
+path.
 
 ## Test
 
@@ -53,7 +81,7 @@ Run from the repository root:
 ```bash
 cargo fmt --manifest-path sender/streamer/Cargo.toml --check
 cargo check --manifest-path sender/streamer/Cargo.toml --examples
-cargo test --manifest-path sender/streamer/Cargo.toml
+cargo test --locked --manifest-path sender/streamer/Cargo.toml
 ```
 
 ## Run continuously
