@@ -42,6 +42,23 @@ The versioned local process contract for a C++ producer is defined in
 [`../../docs/slam-streamer-boundary.md`](../../docs/slam-streamer-boundary.md).
 It deliberately stops before Protocol v1 serialization and network publishing.
 
+## Live SLAM input adapter
+
+`LiveSlamListener` binds the configured Unix socket without deleting an existing
+path, accepts one producer, and converts validated boundary messages into
+backend-independent `LiveSlamEvent` values. Tracking events expose the existing
+`SlamPose` and `SlamTrackingState` model when a pose is available; point-cloud
+deltas remain independent of Protocol v1 serialization.
+
+The adapter reads directly from the connection and adds no application queue.
+A clean session requires `session_end` before EOF. Invalid input, truncated
+frames, and an early disconnect are returned as distinct errors. Dropping the
+listener removes only the socket file instance it created.
+
+Production socket selection and reconnect policy belong to the later live
+Sender integration. Tests use temporary local sockets and require no camera or
+ORB-SLAM3 installation.
+
 ## Requirements
 
 - Rust stable toolchain
