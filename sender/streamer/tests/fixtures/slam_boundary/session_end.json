@@ -1,0 +1,6 @@
+{
+  "type": "session_end",
+  "boundary_version": 1,
+  "session_id": "fixture-session",
+  "reason": "shutdown"
+}

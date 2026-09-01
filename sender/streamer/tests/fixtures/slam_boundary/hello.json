@@ -1,0 +1,13 @@
+{
+  "type": "hello",
+  "boundary_version": 1,
+  "session_id": "fixture-session",
+  "producer": "fixture-slam",
+  "camera": {
+    "camera_type": "monocular",
+    "id": "fixture-camera",
+    "width": 1280,
+    "height": 720,
+    "fps": 30
+  }
+}

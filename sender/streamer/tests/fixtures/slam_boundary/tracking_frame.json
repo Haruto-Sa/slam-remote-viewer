@@ -1,0 +1,12 @@
+{
+  "type": "tracking_frame",
+  "boundary_version": 1,
+  "session_id": "fixture-session",
+  "frame_id": 7,
+  "timestamp_seconds": 0.25,
+  "tracking_state": "tracking",
+  "pose": {
+    "translation": [1.0, 2.0, 3.0],
+    "orientation_xyzw": [0.0, 0.0, 0.0, 1.0]
+  }
+}
