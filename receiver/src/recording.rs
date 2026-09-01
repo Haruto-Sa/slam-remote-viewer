@@ -3,15 +3,28 @@ use std::{
     error::Error,
     fmt,
     fs::{self, File},
-    io::{self, BufWriter, Write},
+    io::{self, BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::mpsc::{self, Sender},
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
-use crate::protocol::{PointCloudMessage, SettingsMessage, TelemetryMessage};
+use crate::{
+    MAX_PAYLOAD_BYTES,
+    protocol::{
+        POINTCLOUD_TOPIC, POSE_TOPIC, PointCloudMessage, PoseMessage, SETTINGS_TOPIC,
+        SettingsMessage, TelemetryMessage,
+    },
+};
+
+const CHECKPOINT_FILE: &str = "recording.inprogress.json";
+const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
+const CHECKPOINT_MESSAGE_INTERVAL: u64 = 64;
+const RECOVERED_TELEMETRY_FILE: &str = "telemetry.recovered.ndjson";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionRejection {
@@ -82,6 +95,11 @@ pub enum RecordingError {
         path: PathBuf,
         source: serde_json::Error,
     },
+    InvalidRecovery {
+        path: PathBuf,
+        line: Option<usize>,
+        reason: String,
+    },
     WorkerStopped,
     WorkerPanicked,
 }
@@ -103,6 +121,24 @@ impl fmt::Display for RecordingError {
                 "failed to serialize recording data for {}: {source}",
                 path.display()
             ),
+            Self::InvalidRecovery {
+                path,
+                line: Some(line),
+                reason,
+            } => write!(
+                formatter,
+                "invalid recoverable telemetry {} line {line}: {reason}",
+                path.display()
+            ),
+            Self::InvalidRecovery {
+                path,
+                line: None,
+                reason,
+            } => write!(
+                formatter,
+                "invalid recording recovery data {}: {reason}",
+                path.display()
+            ),
             Self::WorkerStopped => write!(formatter, "recording worker stopped unexpectedly"),
             Self::WorkerPanicked => write!(formatter, "recording worker panicked"),
         }
@@ -114,7 +150,7 @@ impl Error for RecordingError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Serialization { source, .. } => Some(source),
-            Self::WorkerStopped | Self::WorkerPanicked => None,
+            Self::InvalidRecovery { .. } | Self::WorkerStopped | Self::WorkerPanicked => None,
         }
     }
 }
@@ -127,6 +163,28 @@ pub struct RecordingSummary {
     pub pose_count: u64,
     pub pointcloud_message_count: u64,
     pub point_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverySummary {
+    pub session: String,
+    pub directory: PathBuf,
+    pub message_count: u64,
+    pub point_count: usize,
+    pub discarded_trailing_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoveryFailure {
+    pub directory: PathBuf,
+    pub reason: String,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RecoveryReport {
+    pub recovered: Vec<RecoverySummary>,
+    pub already_finalized: Vec<PathBuf>,
+    pub failures: Vec<RecoveryFailure>,
 }
 
 pub struct TelemetryRecorder {
@@ -171,22 +229,32 @@ fn record_messages(
     let mut active: Option<SessionRecording> = None;
     let mut summaries = Vec::new();
 
-    for message in receiver {
-        if let TelemetryMessage::Settings(settings) = &message
-            && active
-                .as_ref()
-                .is_none_or(|recording| recording.session != settings.session)
-        {
-            if let Some(recording) = active.take() {
-                summaries.push(recording.finish()?);
-            }
-            active = Some(SessionRecording::start(root, settings)?);
-        }
+    loop {
+        match receiver.recv_timeout(CHECKPOINT_INTERVAL) {
+            Ok(message) => {
+                if let TelemetryMessage::Settings(settings) = &message
+                    && active
+                        .as_ref()
+                        .is_none_or(|recording| recording.session != settings.session)
+                {
+                    if let Some(recording) = active.take() {
+                        summaries.push(recording.finish()?);
+                    }
+                    active = Some(SessionRecording::start(root, settings)?);
+                }
 
-        if let Some(recording) = &mut active
-            && recording.session == message.session()
-        {
-            recording.append(&message)?;
+                if let Some(recording) = &mut active
+                    && recording.session == message.session()
+                {
+                    recording.append(&message)?;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(recording) = &mut active {
+                    recording.checkpoint(false)?;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
 
@@ -208,6 +276,8 @@ struct SessionRecording {
     message_count: u64,
     pose_count: u64,
     pointcloud_message_count: u64,
+    messages_since_checkpoint: u64,
+    last_checkpoint: Instant,
 }
 
 impl SessionRecording {
@@ -222,7 +292,7 @@ impl SessionRecording {
                 source,
             })?;
 
-        Ok(Self {
+        let recording = Self {
             session: settings.session.clone(),
             frame: settings.frame.clone(),
             unit: settings.unit.clone(),
@@ -233,7 +303,11 @@ impl SessionRecording {
             message_count: 0,
             pose_count: 0,
             pointcloud_message_count: 0,
-        })
+            messages_since_checkpoint: 0,
+            last_checkpoint: Instant::now(),
+        };
+        recording.write_checkpoint()?;
+        Ok(recording)
     }
 
     fn append(&mut self, message: &TelemetryMessage) -> Result<(), RecordingError> {
@@ -249,17 +323,14 @@ impl SessionRecording {
             }
         }
 
+        self.messages_since_checkpoint += 1;
+        self.checkpoint(false)?;
+
         Ok(())
     }
 
     fn finish(mut self) -> Result<RecordingSummary, RecordingError> {
-        self.telemetry
-            .flush()
-            .map_err(|source| RecordingError::Io {
-                operation: "flush telemetry log",
-                path: self.telemetry_path.clone(),
-                source,
-            })?;
+        self.checkpoint(true)?;
 
         let summary = RecordingSummary {
             session: self.session.clone(),
@@ -287,12 +358,66 @@ impl SessionRecording {
             point_count: self.points.len(),
             telemetry_file: "telemetry.ndjson",
             pointcloud_file: "pointcloud.ply",
+            finalization: "clean",
+            discarded_trailing_bytes: 0,
         };
         write_atomic(&metadata_path, |writer| {
             serde_json::to_writer_pretty(writer, &metadata).map_err(io::Error::other)
         })?;
 
+        let checkpoint_path = self.directory.join(CHECKPOINT_FILE);
+        fs::remove_file(&checkpoint_path).map_err(|source| RecordingError::Io {
+            operation: "remove completed recording checkpoint",
+            path: checkpoint_path,
+            source,
+        })?;
+
         Ok(summary)
+    }
+
+    fn checkpoint(&mut self, force: bool) -> Result<(), RecordingError> {
+        if !force
+            && self.messages_since_checkpoint < CHECKPOINT_MESSAGE_INTERVAL
+            && self.last_checkpoint.elapsed() < CHECKPOINT_INTERVAL
+        {
+            return Ok(());
+        }
+
+        self.telemetry
+            .flush()
+            .map_err(|source| RecordingError::Io {
+                operation: "flush telemetry checkpoint",
+                path: self.telemetry_path.clone(),
+                source,
+            })?;
+        self.telemetry
+            .get_ref()
+            .sync_data()
+            .map_err(|source| RecordingError::Io {
+                operation: "sync telemetry checkpoint",
+                path: self.telemetry_path.clone(),
+                source,
+            })?;
+        self.write_checkpoint()?;
+        self.messages_since_checkpoint = 0;
+        self.last_checkpoint = Instant::now();
+        Ok(())
+    }
+
+    fn write_checkpoint(&self) -> Result<(), RecordingError> {
+        let checkpoint_path = self.directory.join(CHECKPOINT_FILE);
+        let checkpoint = InProgressCheckpoint {
+            protocol_version: 1,
+            recording_state: "in_progress".to_owned(),
+            session: self.session.clone(),
+            frame: self.frame.clone(),
+            unit: self.unit.clone(),
+            flushed_message_count: self.message_count,
+            telemetry_file: "telemetry.ndjson".to_owned(),
+        };
+        write_atomic(&checkpoint_path, |writer| {
+            serde_json::to_writer_pretty(writer, &checkpoint).map_err(io::Error::other)
+        })
     }
 }
 
@@ -314,6 +439,424 @@ struct RecordingMetadata<'a> {
     point_count: usize,
     telemetry_file: &'static str,
     pointcloud_file: &'static str,
+    finalization: &'static str,
+    discarded_trailing_bytes: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InProgressCheckpoint {
+    protocol_version: u32,
+    recording_state: String,
+    session: String,
+    frame: String,
+    unit: String,
+    flushed_message_count: u64,
+    telemetry_file: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveryEnvelope {
+    topic: String,
+    payload: Box<RawValue>,
+}
+
+#[derive(Default)]
+struct RecoveredTelemetryState {
+    settings_seen: bool,
+    message_count: u64,
+    pose_count: u64,
+    pointcloud_message_count: u64,
+    points: BTreeMap<u64, [f64; 3]>,
+    valid_bytes: u64,
+    discarded_trailing_bytes: u64,
+}
+
+pub fn recover_incomplete_recordings(root: &Path) -> Result<RecoveryReport, RecordingError> {
+    if !root.exists() {
+        return Ok(RecoveryReport::default());
+    }
+
+    let entries = fs::read_dir(root).map_err(|source| RecordingError::Io {
+        operation: "scan recording root",
+        path: root.to_owned(),
+        source,
+    })?;
+    let mut directories = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|source| RecordingError::Io {
+            operation: "read recording-root entry",
+            path: root.to_owned(),
+            source,
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|source| RecordingError::Io {
+            operation: "inspect recording-root entry",
+            path: path.clone(),
+            source,
+        })?;
+        if file_type.is_dir() && entry.file_name() != "clips" {
+            directories.push(path);
+        }
+    }
+    directories.sort();
+
+    let mut report = RecoveryReport::default();
+    for directory in directories {
+        let checkpoint_path = directory.join(CHECKPOINT_FILE);
+        if !checkpoint_path.is_file() {
+            continue;
+        }
+
+        let metadata_path = directory.join("metadata.json");
+        if metadata_path.is_file() {
+            match fs::remove_file(&checkpoint_path) {
+                Ok(()) => report.already_finalized.push(directory),
+                Err(error) => report.failures.push(RecoveryFailure {
+                    directory,
+                    reason: format!("failed to remove stale checkpoint: {error}"),
+                }),
+            }
+            continue;
+        }
+
+        match recover_directory(&directory, &checkpoint_path) {
+            Ok(summary) => report.recovered.push(summary),
+            Err(error) => report.failures.push(RecoveryFailure {
+                directory,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    Ok(report)
+}
+
+fn recover_directory(
+    directory: &Path,
+    checkpoint_path: &Path,
+) -> Result<RecoverySummary, RecordingError> {
+    let checkpoint_file = File::open(checkpoint_path).map_err(|source| RecordingError::Io {
+        operation: "open recording checkpoint",
+        path: checkpoint_path.to_owned(),
+        source,
+    })?;
+    let checkpoint: InProgressCheckpoint =
+        serde_json::from_reader(checkpoint_file).map_err(|source| {
+            RecordingError::Serialization {
+                path: checkpoint_path.to_owned(),
+                source,
+            }
+        })?;
+    validate_checkpoint(checkpoint_path, &checkpoint)?;
+
+    let telemetry_path = directory.join(&checkpoint.telemetry_file);
+    let recovered = scan_recoverable_telemetry(&telemetry_path, &checkpoint)?;
+    if recovered.message_count < checkpoint.flushed_message_count {
+        return Err(invalid_recovery(
+            &telemetry_path,
+            None,
+            format!(
+                "checkpoint reports {} flushed messages, but only {} complete messages remain",
+                checkpoint.flushed_message_count, recovered.message_count
+            ),
+        ));
+    }
+
+    let recovered_telemetry_path = directory.join(RECOVERED_TELEMETRY_FILE);
+    copy_prefix_atomic(
+        &telemetry_path,
+        &recovered_telemetry_path,
+        recovered.valid_bytes,
+    )?;
+
+    let ply_path = directory.join("pointcloud.ply");
+    write_atomic(&ply_path, |writer| {
+        write_ply(
+            writer,
+            &sanitize_session(&checkpoint.session),
+            &recovered.points,
+        )
+    })?;
+
+    let metadata_path = directory.join("metadata.json");
+    let metadata = RecordingMetadata {
+        protocol_version: 1,
+        session: &checkpoint.session,
+        frame: &checkpoint.frame,
+        unit: &checkpoint.unit,
+        message_count: recovered.message_count,
+        pose_count: recovered.pose_count,
+        pointcloud_message_count: recovered.pointcloud_message_count,
+        point_count: recovered.points.len(),
+        telemetry_file: RECOVERED_TELEMETRY_FILE,
+        pointcloud_file: "pointcloud.ply",
+        finalization: "recovered",
+        discarded_trailing_bytes: recovered.discarded_trailing_bytes,
+    };
+    write_atomic(&metadata_path, |writer| {
+        serde_json::to_writer_pretty(writer, &metadata).map_err(io::Error::other)
+    })?;
+    fs::remove_file(checkpoint_path).map_err(|source| RecordingError::Io {
+        operation: "remove recovered recording checkpoint",
+        path: checkpoint_path.to_owned(),
+        source,
+    })?;
+
+    Ok(RecoverySummary {
+        session: checkpoint.session,
+        directory: directory.to_owned(),
+        message_count: recovered.message_count,
+        point_count: recovered.points.len(),
+        discarded_trailing_bytes: recovered.discarded_trailing_bytes,
+    })
+}
+
+fn validate_checkpoint(
+    path: &Path,
+    checkpoint: &InProgressCheckpoint,
+) -> Result<(), RecordingError> {
+    if checkpoint.protocol_version != 1 {
+        return Err(invalid_recovery(
+            path,
+            None,
+            format!(
+                "protocol_version must be 1, received {}",
+                checkpoint.protocol_version
+            ),
+        ));
+    }
+    if checkpoint.recording_state != "in_progress" {
+        return Err(invalid_recovery(
+            path,
+            None,
+            "recording_state must be \"in_progress\"",
+        ));
+    }
+    if checkpoint.session.trim().is_empty() {
+        return Err(invalid_recovery(path, None, "session must not be empty"));
+    }
+    if checkpoint.frame != "unity_world" || checkpoint.unit != "m" {
+        return Err(invalid_recovery(
+            path,
+            None,
+            "checkpoint must use unity_world coordinates in metres",
+        ));
+    }
+    if Path::new(&checkpoint.telemetry_file)
+        .file_name()
+        .and_then(|name| name.to_str())
+        != Some(checkpoint.telemetry_file.as_str())
+    {
+        return Err(invalid_recovery(
+            path,
+            None,
+            "telemetry_file must be a plain filename",
+        ));
+    }
+    Ok(())
+}
+
+fn scan_recoverable_telemetry(
+    path: &Path,
+    checkpoint: &InProgressCheckpoint,
+) -> Result<RecoveredTelemetryState, RecordingError> {
+    let file = File::open(path).map_err(|source| RecordingError::Io {
+        operation: "open incomplete telemetry",
+        path: path.to_owned(),
+        source,
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut recovered = RecoveredTelemetryState::default();
+    let mut line = Vec::new();
+    let mut line_number = 0_usize;
+
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_until(b'\n', &mut line)
+            .map_err(|source| RecordingError::Io {
+                operation: "read incomplete telemetry",
+                path: path.to_owned(),
+                source,
+            })?;
+        if bytes == 0 {
+            break;
+        }
+        line_number += 1;
+        if line.last() != Some(&b'\n') {
+            recovered.discarded_trailing_bytes = bytes as u64;
+            break;
+        }
+
+        let payload = &line[..line.len() - 1];
+        if payload.is_empty() {
+            return Err(invalid_recovery(
+                path,
+                Some(line_number),
+                "blank lines are not allowed",
+            ));
+        }
+        apply_recovered_line(path, line_number, payload, checkpoint, &mut recovered)?;
+        recovered.valid_bytes += bytes as u64;
+    }
+
+    if !recovered.settings_seen {
+        return Err(invalid_recovery(
+            path,
+            None,
+            "telemetry must contain Settings as its first complete message",
+        ));
+    }
+    Ok(recovered)
+}
+
+fn apply_recovered_line(
+    path: &Path,
+    line: usize,
+    bytes: &[u8],
+    checkpoint: &InProgressCheckpoint,
+    recovered: &mut RecoveredTelemetryState,
+) -> Result<(), RecordingError> {
+    let envelope: RecoveryEnvelope = serde_json::from_slice(bytes).map_err(|error| {
+        invalid_recovery(path, Some(line), format!("invalid envelope JSON: {error}"))
+    })?;
+    if envelope.payload.get().len() > MAX_PAYLOAD_BYTES {
+        return Err(invalid_recovery(
+            path,
+            Some(line),
+            format!("payload exceeds {MAX_PAYLOAD_BYTES} bytes"),
+        ));
+    }
+
+    let message = match envelope.topic.as_str() {
+        SETTINGS_TOPIC => {
+            let settings: SettingsMessage =
+                serde_json::from_str(envelope.payload.get()).map_err(|error| {
+                    invalid_recovery(path, Some(line), format!("invalid Settings: {error}"))
+                })?;
+            validate_recovered_settings(path, line, checkpoint, &settings)?;
+            TelemetryMessage::Settings(settings)
+        }
+        POSE_TOPIC => {
+            let pose: PoseMessage =
+                serde_json::from_str(envelope.payload.get()).map_err(|error| {
+                    invalid_recovery(path, Some(line), format!("invalid Pose: {error}"))
+                })?;
+            pose.validate().map_err(|error| {
+                invalid_recovery(path, Some(line), format!("invalid Pose: {error}"))
+            })?;
+            TelemetryMessage::Pose(pose)
+        }
+        POINTCLOUD_TOPIC => {
+            let pointcloud: PointCloudMessage = serde_json::from_str(envelope.payload.get())
+                .map_err(|error| {
+                    invalid_recovery(path, Some(line), format!("invalid PointCloud: {error}"))
+                })?;
+            pointcloud.validate().map_err(|error| {
+                invalid_recovery(path, Some(line), format!("invalid PointCloud: {error}"))
+            })?;
+            TelemetryMessage::PointCloud(pointcloud)
+        }
+        topic => {
+            return Err(invalid_recovery(
+                path,
+                Some(line),
+                format!("unsupported topic {topic:?}"),
+            ));
+        }
+    };
+
+    if recovered.message_count == 0 && !matches!(message, TelemetryMessage::Settings(_)) {
+        return Err(invalid_recovery(
+            path,
+            Some(line),
+            "the first message must be Settings",
+        ));
+    }
+    if message.session() != checkpoint.session {
+        return Err(invalid_recovery(
+            path,
+            Some(line),
+            format!(
+                "session must be {:?}, received {:?}",
+                checkpoint.session,
+                message.session()
+            ),
+        ));
+    }
+
+    recovered.message_count += 1;
+    match message {
+        TelemetryMessage::Settings(_) => recovered.settings_seen = true,
+        TelemetryMessage::Pose(_) => recovered.pose_count += 1,
+        TelemetryMessage::PointCloud(delta) => {
+            recovered.pointcloud_message_count += 1;
+            apply_delta(&mut recovered.points, &delta);
+        }
+    }
+    Ok(())
+}
+
+fn validate_recovered_settings(
+    path: &Path,
+    line: usize,
+    checkpoint: &InProgressCheckpoint,
+    settings: &SettingsMessage,
+) -> Result<(), RecordingError> {
+    let fixed_values = [
+        ("unit", settings.unit.as_str(), "m"),
+        ("frame", settings.frame.as_str(), "unity_world"),
+        ("pose_convention", settings.pose_convention.as_str(), "Twc"),
+        ("quaternion", settings.quaternion.as_str(), "xyzw"),
+        (
+            "pointcloud_mode",
+            settings.pointcloud_mode.as_str(),
+            "delta",
+        ),
+    ];
+    if settings.v != 1 {
+        return Err(invalid_recovery(
+            path,
+            Some(line),
+            format!("unsupported protocol version: {}", settings.v),
+        ));
+    }
+    if settings.session != checkpoint.session {
+        return Err(invalid_recovery(
+            path,
+            Some(line),
+            "Settings session does not match the checkpoint",
+        ));
+    }
+    for (field, actual, expected) in fixed_values {
+        if actual != expected {
+            return Err(invalid_recovery(
+                path,
+                Some(line),
+                format!("{field} must be {expected:?}, received {actual:?}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn copy_prefix_atomic(source: &Path, destination: &Path, bytes: u64) -> Result<(), RecordingError> {
+    write_atomic(destination, |writer| {
+        let file = File::open(source)?;
+        let mut prefix = file.take(bytes);
+        io::copy(&mut prefix, writer)?;
+        Ok(())
+    })
+}
+
+fn invalid_recovery(path: &Path, line: Option<usize>, reason: impl Into<String>) -> RecordingError {
+    RecordingError::InvalidRecovery {
+        path: path.to_owned(),
+        line,
+        reason: reason.into(),
+    }
 }
 
 pub(crate) fn write_recorded_message(
@@ -466,6 +1009,11 @@ pub(crate) fn write_atomic(
         path: temporary.clone(),
         source,
     })?;
+    file.sync_all().map_err(|source| RecordingError::Io {
+        operation: "sync temporary file",
+        path: temporary.clone(),
+        source,
+    })?;
     fs::rename(&temporary, destination).map_err(|source| RecordingError::Io {
         operation: "finalize file",
         path: destination.to_owned(),
@@ -476,12 +1024,16 @@ pub(crate) fn write_atomic(
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
+        fs::{self, OpenOptions},
+        io::Write as _,
         sync::atomic::{AtomicU64, Ordering},
     };
 
     use super::*;
-    use crate::protocol::{POINTCLOUD_TOPIC, POSE_TOPIC, SETTINGS_TOPIC, parse_telemetry};
+    use crate::{
+        playback,
+        protocol::{POINTCLOUD_TOPIC, POSE_TOPIC, SETTINGS_TOPIC, parse_telemetry},
+    };
 
     const SETTINGS: &str = include_str!("../../protocol/settings.example.json");
     const POSE: &str = include_str!("../../protocol/pose.example.json");
@@ -539,6 +1091,33 @@ mod tests {
             update,
             remove,
         })
+    }
+
+    fn leave_incomplete_recording(
+        root: &Path,
+        session: &str,
+        messages: &[TelemetryMessage],
+    ) -> PathBuf {
+        let settings_message = settings(session);
+        let TelemetryMessage::Settings(settings) = &settings_message else {
+            unreachable!()
+        };
+        let mut recording =
+            SessionRecording::start(root, settings).expect("incomplete recording should start");
+        recording
+            .append(&settings_message)
+            .expect("settings should be recorded");
+        for message in messages {
+            recording
+                .append(message)
+                .expect("telemetry should be recorded");
+        }
+        recording
+            .checkpoint(true)
+            .expect("telemetry should be checkpointed");
+        let directory = recording.directory.clone();
+        drop(recording);
+        directory
     }
 
     #[test]
@@ -658,6 +1237,172 @@ mod tests {
         assert_eq!(metadata["frame"], "unity_world");
         assert_eq!(metadata["message_count"], 2);
         assert_eq!(metadata["point_count"], 1);
+        assert_eq!(metadata["finalization"], "clean");
+        assert_eq!(metadata["discarded_trailing_bytes"], 0);
+        assert!(!summary.directory.join(CHECKPOINT_FILE).exists());
+    }
+
+    #[test]
+    fn recovers_incomplete_recording_and_rebuilds_final_points() {
+        let root = TestDirectory::new("recover");
+        let directory = leave_incomplete_recording(
+            &root.0,
+            "recover-test",
+            &[
+                pointcloud(
+                    "recover-test",
+                    vec![(1, 1.0, 2.0, 3.0), (2, 4.0, 5.0, 6.0)],
+                    vec![],
+                    vec![],
+                ),
+                pointcloud(
+                    "recover-test",
+                    vec![(3, 7.0, 8.0, 9.0)],
+                    vec![(1, 10.0, 20.0, 30.0)],
+                    vec![2],
+                ),
+            ],
+        );
+
+        let report = recover_incomplete_recordings(&root.0).expect("recovery should run");
+        assert_eq!(report.recovered.len(), 1);
+        assert!(report.failures.is_empty());
+        assert_eq!(report.recovered[0].message_count, 3);
+        assert_eq!(report.recovered[0].point_count, 2);
+        assert_eq!(report.recovered[0].discarded_trailing_bytes, 0);
+        assert!(!directory.join(CHECKPOINT_FILE).exists());
+
+        let metadata: serde_json::Value = serde_json::from_slice(
+            &fs::read(directory.join("metadata.json")).expect("metadata should be readable"),
+        )
+        .expect("metadata should be JSON");
+        assert_eq!(metadata["finalization"], "recovered");
+        assert_eq!(metadata["telemetry_file"], RECOVERED_TELEMETRY_FILE);
+        assert_eq!(metadata["message_count"], 3);
+        assert_eq!(metadata["point_count"], 2);
+
+        let ply = fs::read_to_string(directory.join("pointcloud.ply"))
+            .expect("recovered PLY should be readable");
+        assert!(ply.contains("element vertex 2"));
+        assert!(ply.ends_with("10 20 30\n7 8 9\n"));
+
+        let loaded = playback::load_session(&directory)
+            .expect("recovered recording should remain replayable");
+        assert_eq!(loaded.messages().len(), 3);
+
+        let second = recover_incomplete_recordings(&root.0).expect("second scan should succeed");
+        assert!(second.recovered.is_empty());
+        assert!(second.already_finalized.is_empty());
+        assert!(second.failures.is_empty());
+    }
+
+    #[test]
+    fn discards_only_an_unterminated_final_line_and_preserves_source() {
+        let root = TestDirectory::new("truncated-tail");
+        let directory = leave_incomplete_recording(
+            &root.0,
+            "truncated-test",
+            &[pointcloud(
+                "truncated-test",
+                vec![(1, 1.0, 2.0, 3.0)],
+                vec![],
+                vec![],
+            )],
+        );
+        let telemetry_path = directory.join("telemetry.ndjson");
+        let truncated = br#"{"topic":"slam/v1/pose","payload":{"v":1"#;
+        OpenOptions::new()
+            .append(true)
+            .open(&telemetry_path)
+            .expect("telemetry should open")
+            .write_all(truncated)
+            .expect("truncated line should append");
+        let source_before = fs::read(&telemetry_path).expect("source should be readable");
+
+        let report = recover_incomplete_recordings(&root.0).expect("recovery should run");
+        assert!(report.failures.is_empty());
+        assert_eq!(
+            report.recovered[0].discarded_trailing_bytes,
+            truncated.len() as u64
+        );
+        assert_eq!(
+            fs::read(&telemetry_path).expect("source should remain readable"),
+            source_before
+        );
+
+        let recovered = fs::read(directory.join(RECOVERED_TELEMETRY_FILE))
+            .expect("recovered telemetry should be readable");
+        assert_eq!(
+            recovered,
+            &source_before[..source_before.len() - truncated.len()]
+        );
+        playback::load_session(&directory).expect("trimmed recording should replay");
+    }
+
+    #[test]
+    fn complete_invalid_line_fails_without_modifying_source() {
+        let root = TestDirectory::new("invalid-line");
+        let directory = leave_incomplete_recording(&root.0, "invalid-test", &[]);
+        let telemetry_path = directory.join("telemetry.ndjson");
+        OpenOptions::new()
+            .append(true)
+            .open(&telemetry_path)
+            .expect("telemetry should open")
+            .write_all(b"not-json\n")
+            .expect("invalid line should append");
+        let source_before = fs::read(&telemetry_path).expect("source should be readable");
+
+        let report = recover_incomplete_recordings(&root.0).expect("scan should complete");
+        assert!(report.recovered.is_empty());
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0].reason.contains("line 2"));
+        assert!(directory.join(CHECKPOINT_FILE).exists());
+        assert!(!directory.join("metadata.json").exists());
+        assert_eq!(
+            fs::read(&telemetry_path).expect("source should remain readable"),
+            source_before
+        );
+    }
+
+    #[test]
+    fn stale_checkpoint_never_overwrites_finalized_recording() {
+        let root = TestDirectory::new("finalized");
+        let recorder = TelemetryRecorder::start(&root.0);
+        recorder.record(&settings("finished")).expect("settings");
+        let summary = recorder
+            .finish()
+            .expect("recording should finish")
+            .remove(0);
+        let metadata_path = summary.directory.join("metadata.json");
+        let metadata_before = fs::read(&metadata_path).expect("metadata should be readable");
+        fs::write(summary.directory.join(CHECKPOINT_FILE), b"stale checkpoint")
+            .expect("stale marker should be writable");
+
+        let report = recover_incomplete_recordings(&root.0).expect("scan should complete");
+        assert!(report.recovered.is_empty());
+        assert_eq!(report.already_finalized, vec![summary.directory.clone()]);
+        assert!(report.failures.is_empty());
+        assert_eq!(
+            fs::read(metadata_path).expect("metadata should remain readable"),
+            metadata_before
+        );
+        assert!(!summary.directory.join(CHECKPOINT_FILE).exists());
+    }
+
+    #[test]
+    fn recovery_ignores_clip_directories() {
+        let root = TestDirectory::new("ignore-clips");
+        let clip_directory = root.0.join("clips").join("unfinished-clip");
+        fs::create_dir_all(&clip_directory).expect("clip directory should be created");
+        let marker = clip_directory.join(CHECKPOINT_FILE);
+        fs::write(&marker, b"not a full-session checkpoint")
+            .expect("clip marker should be writable");
+
+        let report = recover_incomplete_recordings(&root.0).expect("scan should complete");
+        assert!(report.recovered.is_empty());
+        assert!(report.already_finalized.is_empty());
+        assert!(report.failures.is_empty());
+        assert!(marker.exists());
     }
 
     #[test]

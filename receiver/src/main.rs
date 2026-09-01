@@ -18,7 +18,7 @@ use slam_receiver::{
     protocol::{TelemetryMessage, parse_telemetry},
     publisher::{EncodedTelemetry, SettingsRepeater, encode_telemetry, publish_encoded},
     quaternion::QuaternionContinuity,
-    recording::{SessionGate, TelemetryRecorder},
+    recording::{SessionGate, TelemetryRecorder, recover_incomplete_recordings},
 };
 
 const DEFAULT_INPUT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
@@ -61,6 +61,32 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
+
+    let recovery = recover_incomplete_recordings(&cli.record_dir)?;
+    for summary in &recovery.recovered {
+        println!(
+            "recording recovered: session={} messages={} points={} discarded_trailing_bytes={} \
+             directory={}",
+            summary.session,
+            summary.message_count,
+            summary.point_count,
+            summary.discarded_trailing_bytes,
+            summary.directory.display()
+        );
+    }
+    for directory in &recovery.already_finalized {
+        println!(
+            "removed stale recording checkpoint: directory={}",
+            directory.display()
+        );
+    }
+    for failure in &recovery.failures {
+        eprintln!(
+            "recording recovery failed: directory={} reason={}",
+            failure.directory.display(),
+            failure.reason
+        );
+    }
 
     let context = zmq::Context::new();
     let subscriber = context.socket(zmq::SUB)?;
