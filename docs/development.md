@@ -832,6 +832,47 @@ Suggested branch:
 feature/61-unity-telemetry-clips
 ```
 
+## Issue 66: Crash-recoverable continuous telemetry recordings
+
+Goal: preserve the durable portion of an active full-session recording when
+the Receiver or host stops without a clean shutdown.
+
+Implemented behavior:
+
+- flush and synchronize active telemetry at least once per second or every 64
+  messages;
+- atomically maintain an in-progress checkpoint beside the telemetry log;
+- scan full-session recording directories before Receiver sockets are opened;
+- validate complete NDJSON records and discard only an unterminated final line;
+- rebuild message statistics and final retained point-cloud state;
+- preserve the original telemetry file and write a separate recovered prefix;
+- write recovered metadata and PLY output compatible with
+  `slam-session-player`;
+- distinguish `clean` and `recovered` finalization in metadata;
+- skip clip directories and never overwrite existing finalized metadata;
+- retain failed recovery inputs and report the affected path and line when
+  available.
+
+Acceptance criteria:
+
+- an interrupted recording is recovered automatically on the next Receiver
+  start;
+- all complete, valid telemetry up to a torn final write remains replayable;
+- complete malformed records fail instead of being silently discarded;
+- the source telemetry is unchanged by both successful and failed recovery;
+- recovered counts and point-cloud output are rebuilt from telemetry;
+- startup recovery is idempotent and does not alter finalized sessions or
+  clips;
+- automated tests cover clean finalization, valid recovery, torn trailing
+  records, malformed complete records, replay compatibility, and idempotency;
+- no files below `sender/camera` or `sender/slam` are changed.
+
+Suggested branch:
+
+```text
+feature/66-crash-recoverable-recordings
+```
+
 ## Local development order
 
 Run and verify components from left to right:
