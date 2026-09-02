@@ -232,3 +232,82 @@ The verified local IPC run delivered one hello, all 798 tracking frames, and an
 orderly session end to the Rust adapter; 796 frames contained a valid pose. No
 image bytes, ORB-SLAM3 types, Protocol v1 JSON, or point-cloud data crossed this
 boundary.
+
+## Live camera to Protocol v1
+
+`orbslam3_macos_camera_sender` connects the macOS camera source, ORB-SLAM3 pose
+adapter, and boundary publisher. For an MVP transport/display check, it accepts
+the device ID and capture mode directly. The ORB settings file still controls
+SLAM intrinsics. A camera-specific calibration is recommended before evaluating
+pose accuracy, but is not required to exercise the live telemetry path.
+
+Start `packet_dump --pose-only`, then the Rust Sender, before starting the C++
+producer:
+
+```bash
+cargo run --manifest-path sender/streamer/Cargo.toml \
+  --example packet_dump -- 'tcp://127.0.0.1:5555' --pose-only
+
+cargo run --manifest-path sender/streamer/Cargo.toml \
+  --bin slam-mock-sender -- --source live \
+  --slam-socket /private/tmp/slam-live.sock \
+  --endpoint 'tcp://127.0.0.1:5555'
+
+/private/tmp/slam-pose-adapter/orbslam3_macos_camera_sender \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt \
+  orb-camera.yaml DEVICE_ID 1280 720 30 /private/tmp/slam-live.sock \
+  live-session mac-camera 900
+```
+
+The finite frame limit makes the session repeatable; Ctrl-C also requests a
+clean stop. The final log reports captured frames, valid poses, camera drops,
+tracking-state transitions, observed input FPS, processed FPS, and mean
+ORB-SLAM3 tracking time. No image is sent or saved.
+
+Ctrl-C is cooperative while `TrackMonocular` is returning normally. If an
+upstream ORB-SLAM3 call does not return, a five-second watchdog terminates the
+process with exit code 130 so the camera and process cannot remain stuck. That
+forced path cannot send `session_end`; the Rust Sender will report a producer
+disconnect, which distinguishes it from a clean shutdown. `Ctrl-D` is not a
+process-stop operation.
+
+For the MVP, verify settings precede any pose, the Receiver accepts the session,
+and no camera/SLAM process remains after shutdown. Coordinate accuracy,
+calibration RMS, controlled-axis motion, and quantitative performance thresholds
+are follow-up validation rather than blockers for the first live display.
+
+The 2026-09-03 Apple Silicon MVP run at `640x480@30` delivered 643 live poses
+from 900 camera frames with zero camera drops. Rust published those poses as
+Protocol v1 and ended cleanly. See
+[`../../docs/live-slam-conformance.md`](../../docs/live-slam-conformance.md) for
+the measurements and the remaining Unity visual check.
+
+### Two-computer Unity MVP check
+
+On the Receiver/Unity computer, open the Unity project and enter Play Mode. Its
+default subscriber connects to `tcp://127.0.0.1:5556`. Then start the Receiver,
+replacing `MAC_IP` with the sender Mac's LAN address:
+
+```bash
+cargo run --manifest-path receiver/Cargo.toml -- \
+  --endpoint 'tcp://MAC_IP:5555' \
+  --output-endpoint 'tcp://127.0.0.1:5556' \
+  --control-endpoint 'tcp://127.0.0.1:5557'
+```
+
+On the sender Mac, start the Rust Sender bound to all interfaces, then run the
+C++ command above with the same socket path:
+
+```bash
+cargo run --manifest-path sender/streamer/Cargo.toml \
+  --bin slam-mock-sender -- --source live \
+  --slam-socket /private/tmp/slam-live.sock \
+  --endpoint 'tcp://*:5555'
+```
+
+Allow inbound TCP port 5555 on the sender Mac; ports 5556 and 5557 stay local to
+the Receiver/Unity computer. Move the monocular camera slowly sideways while
+keeping a textured scene visible so ORB-SLAM3 can initialize. The MVP passes
+when the Receiver accepts settings and at least one pose, Unity shows the live
+camera/frustum moving, and all processes exit after the finite frame limit or
+Ctrl-C.
