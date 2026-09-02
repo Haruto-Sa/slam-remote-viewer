@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 
 project(slam_camera_contracts VERSION 0.1.0 LANGUAGES CXX)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 option(SLAM_BUILD_TESTS "Build SLAM adapter contract tests" ON)
+option(SLAM_ENABLE_ORB_SLAM3 "Build the optional ORB-SLAM3 pose adapter" OFF)
+set(SLAM_ORB_SLAM3_ROOT "" CACHE PATH "Path to a patched ORB-SLAM3 source tree")
 if(SLAM_BUILD_TESTS)
     enable_testing()
 endif()
@@ -25,6 +31,64 @@ add_library(slam_calibration_io src/calibration_io.cpp)
 add_library(slam::calibration_io ALIAS slam_calibration_io)
 target_link_libraries(slam_calibration_io PUBLIC slam::camera_contracts)
 
+add_library(slam_pose_model src/pose.cpp)
+add_library(slam::pose_model ALIAS slam_pose_model)
+target_link_libraries(slam_pose_model PUBLIC slam::camera_contracts)
+
+if(SLAM_ENABLE_ORB_SLAM3)
+    if(NOT IS_DIRECTORY "${SLAM_ORB_SLAM3_ROOT}")
+        message(FATAL_ERROR "SLAM_ORB_SLAM3_ROOT must name an ORB-SLAM3 source tree")
+    endif()
+    find_package(OpenCV 4 REQUIRED COMPONENTS core imgcodecs imgproc)
+    find_package(Eigen3 3.3 REQUIRED NO_MODULE)
+    find_package(Boost 1.70 REQUIRED COMPONENTS serialization)
+    find_package(Pangolin REQUIRED)
+    find_package(GLEW REQUIRED)
+    find_library(
+        SLAM_ORB_SLAM3_LIBRARY
+        NAMES ORB_SLAM3
+        PATHS "${SLAM_ORB_SLAM3_ROOT}/lib"
+        NO_DEFAULT_PATH REQUIRED
+    )
+    add_library(slam_orbslam3_pose_adapter src/orbslam3_monocular_tracker.cpp)
+    add_library(slam::orbslam3_pose_adapter ALIAS slam_orbslam3_pose_adapter)
+    target_include_directories(
+        slam_orbslam3_pose_adapter
+        SYSTEM PRIVATE
+            "${SLAM_ORB_SLAM3_ROOT}"
+            "${SLAM_ORB_SLAM3_ROOT}/include"
+            "${SLAM_ORB_SLAM3_ROOT}/include/CameraModels"
+            "${SLAM_ORB_SLAM3_ROOT}/Thirdparty/Sophus"
+            "${SLAM_ORB_SLAM3_ROOT}/Thirdparty/g2o/compat"
+            ${Pangolin_INCLUDE_DIRS}
+    )
+    target_link_libraries(
+        slam_orbslam3_pose_adapter
+        PUBLIC slam::pose_model
+        PRIVATE
+            Eigen3::Eigen
+            Boost::serialization
+            pango_core
+            pango_display
+            GLEW::GLEW
+            opencv_core
+            "${SLAM_ORB_SLAM3_LIBRARY}"
+    )
+    add_executable(orbslam3_dataset_pose_dump tools/orbslam3_dataset_pose_dump.cpp)
+    target_link_libraries(
+        orbslam3_dataset_pose_dump
+        PRIVATE slam::orbslam3_pose_adapter opencv_imgcodecs
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(
+            slam_orbslam3_pose_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+        target_compile_options(
+            orbslam3_dataset_pose_dump PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+endif()
+
 add_executable(recorded_frame_dump tools/recorded_frame_dump.cpp)
 target_link_libraries(recorded_frame_dump PRIVATE slam::recorded_frame_source)
 
@@ -36,6 +100,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(recorded_frame_dump PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(slam_pose_model PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 if(APPLE)
@@ -101,4 +166,11 @@ if(SLAM_BUILD_TESTS)
         target_compile_options(calibration_io_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME calibration_io_tests COMMAND calibration_io_tests)
+
+    add_executable(pose_adapter_tests tests/pose_adapter_tests.cpp)
+    target_link_libraries(pose_adapter_tests PRIVATE slam::pose_model)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(pose_adapter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME pose_adapter_tests COMMAND pose_adapter_tests)
 endif()
