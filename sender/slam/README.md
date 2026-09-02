@@ -163,3 +163,40 @@ repository, checks out the revisions in `orbslam3/dependencies.lock.sh`, and
 verifies that the resulting libraries do not link against Intel Homebrew. The
 upstream checkout and build products are intentionally not CMake targets of this
 camera-contract project.
+
+## ORB-SLAM3 pose adapter
+
+`slam::TrackingResult` is the backend-independent output of monocular tracking.
+It preserves the input frame ID and monotonic nanosecond timestamp, reports
+initializing, tracking, lost, or relocalizing, and contains canonical `Twc` only
+when ORB-SLAM3 reports valid tracking. Lost and relocalizing frames never reuse
+the last valid transform. Positions are metres and quaternions use `[x,y,z,w]`.
+ORB-SLAM3, Sophus, Eigen, and OpenCV types remain private to the optional adapter.
+
+Build the adapter against the disposable arm64 tree created above:
+
+```bash
+cmake -S sender/slam -B /private/tmp/slam-pose-adapter \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DSLAM_ENABLE_ORB_SLAM3=ON \
+  -DSLAM_ORB_SLAM3_ROOT=/private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3 \
+  -DCMAKE_PREFIX_PATH='/private/tmp/slam-remote-viewer-orbslam3/install;/private/tmp/slam-remote-viewer-orbslam3/env' \
+  -DOpenCV_DIR=/private/tmp/slam-remote-viewer-orbslam3/env/lib/cmake/opencv4 \
+  -DPangolin_DIR=/private/tmp/slam-remote-viewer-orbslam3/install/lib/cmake/Pangolin
+cmake --build /private/tmp/slam-pose-adapter
+```
+
+Replay the TUM sequence prepared in `docs/slam-host.md` through the adapter:
+
+```bash
+/private/tmp/slam-pose-adapter/orbslam3_dataset_pose_dump \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Examples/Monocular/TUM1.yaml \
+  /private/tmp/slam-remote-viewer-orbslam3/datasets/rgbd_dataset_freiburg1_xyz
+```
+
+The verified M1 run processed 798 frames, emitted 796 valid poses, preserved
+every frame ID and timestamp, and shut down without writing trajectory or map
+files. The viewer defaults to disabled because the telemetry process is
+headless. Saving trajectories remains an explicit responsibility of a future
+diagnostic, not a tracker shutdown side effect.
