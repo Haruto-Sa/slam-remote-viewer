@@ -233,6 +233,20 @@ orderly session end to the Rust adapter; 796 frames contained a valid pose. No
 image bytes, ORB-SLAM3 types, Protocol v1 JSON, or point-cloud data crossed this
 boundary.
 
+## Point-cloud delta reducer
+
+`PointCloudDeltaReducer` converts backend-independent map-point snapshots into
+deterministic add, update, and remove operations. It retains one baseline but
+has no work queue. Snapshot points and each delta category are ordered by stable
+numeric ID, independent of backend iteration order.
+
+The configurable snapshot and delta-operation limits bound retained and emitted
+data. IDs must fit JSON's safe integer range and coordinates must be finite.
+Duplicate IDs, invalid values, and limit violations fail transactionally without
+changing the last valid baseline. `Reset()` clears the baseline so the next
+snapshot is emitted as adds. ORB-SLAM3 extraction, boundary IPC, Protocol v1,
+and Unity remain outside this reducer.
+
 ## Live camera to Protocol v1
 
 `orbslam3_macos_camera_sender` connects the macOS camera source, ORB-SLAM3 pose
