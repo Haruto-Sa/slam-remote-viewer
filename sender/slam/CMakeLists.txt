@@ -138,6 +138,28 @@ if(APPLE)
             "SHELL:-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/macos/CameraInfo.plist"
     )
 
+    if(SLAM_ENABLE_ORB_SLAM3)
+        add_executable(
+            orbslam3_macos_camera_sender tools/orbslam3_macos_camera_sender.cpp
+        )
+        target_link_libraries(
+            orbslam3_macos_camera_sender
+            PRIVATE
+                slam::macos_camera_source
+                slam::orbslam3_pose_adapter
+                slam::boundary_publisher
+                opencv_imgproc
+        )
+        target_compile_options(
+            orbslam3_macos_camera_sender PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+        target_link_options(
+            orbslam3_macos_camera_sender
+            PRIVATE
+                "SHELL:-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/macos/CameraInfo.plist"
+        )
+    endif()
+
     if(SLAM_BUILD_TESTS)
         add_executable(macos_camera_source_tests tests/macos_camera_source_tests.cpp)
         target_link_libraries(macos_camera_source_tests PRIVATE slam::macos_camera_source)
