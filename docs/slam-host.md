@@ -81,3 +81,70 @@ separate arrangement with the ORB-SLAM3 authors.
    prefix.
 5. Confirm macOS reports a camera before requesting application permission.
 6. Only then begin the pinned ORB-SLAM3 build Issue.
+
+## Reproducible Apple Silicon ORB-SLAM3 build
+
+Issue #26 provides an isolated build that does not use the Intel Homebrew
+libraries under `/usr/local`. It creates an osx-arm64 Conda environment and
+keeps all upstream sources, patches, and build products under `/private/tmp`:
+
+```bash
+./tools/bootstrap-orbslam3-macos.sh
+```
+
+The dependency revisions and package versions are recorded in
+`sender/slam/orbslam3/dependencies.lock.sh`. The upstream ORB-SLAM3 source is
+patched only in the temporary checkout. The patch removes host-specific
+`-march=native` flags, links the platform dylib names, and uses imported Boost
+and OpenSSL targets. It does not vendor upstream code in this repository.
+
+The final verifier rejects any ORB-SLAM3 library that is not arm64 or that
+links a dependency from `/usr/local`. Override the temporary location or build
+parallelism only with task-specific variables:
+
+```bash
+SLAM_ORB_WORK_ROOT=/private/tmp/my-orb-build SLAM_BUILD_JOBS=4 \
+  ./tools/bootstrap-orbslam3-macos.sh
+```
+
+After the library build passes, run a monocular dataset through the upstream
+`mono_*` example with `Vocabulary/ORBvoc.txt` and matching calibration. Datasets
+and the expanded vocabulary remain external artifacts and must not be committed.
+Live camera testing belongs to Issue #29 so dependency failures are not confused
+with capture or calibration failures.
+
+For the TUM RGB-D `freiburg1_xyz` sequence, download and extract all smoke-test
+artifacts outside the repository, then run the repeatable headless check:
+
+```bash
+mkdir -p /private/tmp/slam-remote-viewer-orbslam3/datasets
+curl --fail --location \
+  --output /private/tmp/slam-remote-viewer-orbslam3/rgbd_dataset_freiburg1_xyz.tgz \
+  https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_xyz.tgz
+tar -xzf /private/tmp/slam-remote-viewer-orbslam3/rgbd_dataset_freiburg1_xyz.tgz \
+  -C /private/tmp/slam-remote-viewer-orbslam3/datasets
+tar -xzf /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt.tar.gz \
+  -C /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary
+./tools/smoke-test-orbslam3-macos.sh \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3 \
+  /private/tmp/slam-remote-viewer-orbslam3/datasets/rgbd_dataset_freiburg1_xyz
+```
+
+The compatibility patch disables Pangolin only for this dataset executable.
+On macOS, the upstream example starts the viewer from a worker thread and AppKit
+aborts because event handling must run on the main thread. The sender is
+headless, so a trajectory-producing run is the relevant compatibility check.
+
+### Verified Apple Silicon result
+
+On 2026-09-02, a clean bootstrap on the supported M1 host completed in about
+12 minutes 32 seconds. The verifier accepted the arm64 ORB-SLAM3, DBoW2, g2o,
+Pangolin, and OpenCV libraries and found no `/usr/local` dependency. The TUM
+`freiburg1_xyz` archive used for the smoke test had SHA-256
+`a0236d97b8c30cd93b653656d2b6c293ff7c982a4130ef2a1a8beecdb124ef98`.
+
+The 798-frame headless run created its first map with 252 points, shut down
+cleanly, and saved 52 key frames in 44 seconds. The initial unpatched run reached
+SLAM initialization but aborted with AppKit's `nextEventMatchingMask should only
+be called from the Main Thread` exception; this is why the isolated `mono_tum`
+viewer setting is disabled above.
