@@ -3,7 +3,7 @@ use std::{collections::HashSet, env, error::Error, process};
 use slam_mock_sender::{POINTCLOUD_TOPIC, POSE_TOPIC, SETTINGS_TOPIC};
 
 const DEFAULT_ENDPOINT: &str = "tcp://127.0.0.1:5555";
-const RECEIVE_TIMEOUT_MS: i32 = 30_000;
+const RECEIVE_TIMEOUT_MS: i32 = 300_000;
 
 fn main() {
     if let Err(error) = run() {
@@ -13,9 +13,12 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let endpoint = env::args()
-        .nth(1)
+    let arguments = env::args().skip(1).collect::<Vec<_>>();
+    let endpoint = arguments
+        .first()
+        .cloned()
         .unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned());
+    let pose_only = arguments.iter().any(|argument| argument == "--pose-only");
 
     let context = zmq::Context::new();
     let subscriber = context.socket(zmq::SUB)?;
@@ -27,7 +30,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("packet dump connected to {endpoint}");
     println!("waiting for Protocol v1 topics");
 
-    let expected_topics = [SETTINGS_TOPIC, POSE_TOPIC, POINTCLOUD_TOPIC];
+    let expected_topics = if pose_only {
+        vec![SETTINGS_TOPIC, POSE_TOPIC]
+    } else {
+        vec![SETTINGS_TOPIC, POSE_TOPIC, POINTCLOUD_TOPIC]
+    };
 
     let mut received_topics = HashSet::new();
 
@@ -37,7 +44,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             Err(zmq::Error::EAGAIN) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    "no telemetry received within 30 seconds; start the Mock Sender",
+                    "no expected telemetry received within 5 minutes; start the Sender",
                 )
                 .into());
             }
