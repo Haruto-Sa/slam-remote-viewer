@@ -35,6 +35,10 @@ add_library(slam_pose_model src/pose.cpp)
 add_library(slam::pose_model ALIAS slam_pose_model)
 target_link_libraries(slam_pose_model PUBLIC slam::camera_contracts)
 
+add_library(slam_boundary_publisher src/boundary_publisher.cpp)
+add_library(slam::boundary_publisher ALIAS slam_boundary_publisher)
+target_link_libraries(slam_boundary_publisher PUBLIC slam::pose_model)
+
 if(SLAM_ENABLE_ORB_SLAM3)
     if(NOT IS_DIRECTORY "${SLAM_ORB_SLAM3_ROOT}")
         message(FATAL_ERROR "SLAM_ORB_SLAM3_ROOT must name an ORB-SLAM3 source tree")
@@ -77,7 +81,10 @@ if(SLAM_ENABLE_ORB_SLAM3)
     add_executable(orbslam3_dataset_pose_dump tools/orbslam3_dataset_pose_dump.cpp)
     target_link_libraries(
         orbslam3_dataset_pose_dump
-        PRIVATE slam::orbslam3_pose_adapter opencv_imgcodecs
+        PRIVATE
+            slam::orbslam3_pose_adapter
+            slam::boundary_publisher
+            opencv_imgcodecs
     )
     if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
         target_compile_options(
@@ -101,6 +108,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_pose_model PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(slam_boundary_publisher PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 if(APPLE)
@@ -173,4 +181,13 @@ if(SLAM_BUILD_TESTS)
         target_compile_options(pose_adapter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME pose_adapter_tests COMMAND pose_adapter_tests)
+
+    add_executable(boundary_publisher_tests tests/boundary_publisher_tests.cpp)
+    target_link_libraries(boundary_publisher_tests PRIVATE slam::boundary_publisher)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(
+            boundary_publisher_tests PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME boundary_publisher_tests COMMAND boundary_publisher_tests)
 endif()

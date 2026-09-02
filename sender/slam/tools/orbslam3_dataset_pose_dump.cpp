@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <limits>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -12,6 +14,7 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include "slam_remote/camera/image_frame.hpp"
+#include "slam_remote/boundary/publisher.hpp"
 #include "slam_remote/orbslam3/monocular_tracker.hpp"
 
 namespace {
@@ -49,13 +52,38 @@ std::vector<DatasetFrame> LoadTumIndex(const std::string& sequence_path) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cerr << "usage: orbslam3_dataset_pose_dump VOCABULARY SETTINGS TUM_SEQUENCE\n";
+    if (argc != 4 && argc != 8) {
+        std::cerr << "usage: orbslam3_dataset_pose_dump VOCABULARY SETTINGS TUM_SEQUENCE"
+                     " [SOCKET_PATH SESSION_ID CAMERA_ID FPS]\n";
         return 2;
     }
     try {
         const std::string sequence_path = argv[3];
         const auto frames = LoadTumIndex(sequence_path);
+        cv::Mat first_image = cv::imread(sequence_path + "/" + frames.front().relative_path,
+                                         cv::IMREAD_GRAYSCALE);
+        if (first_image.empty()) {
+            throw std::runtime_error("cannot load first dataset image");
+        }
+        const auto timestamp_origin = std::chrono::nanoseconds(
+            std::llround(frames.front().timestamp_seconds * 1'000'000'000.0));
+        std::unique_ptr<slam_remote::boundary::Publisher> publisher;
+        if (argc == 8) {
+            const auto fps_value = std::stoul(argv[7]);
+            if (fps_value == 0 || fps_value > std::numeric_limits<std::uint32_t>::max()) {
+                throw std::invalid_argument("FPS must be a positive uint32 value");
+            }
+            publisher = std::make_unique<slam_remote::boundary::Publisher>(
+                slam_remote::boundary::PublisherConfig{
+                    argv[4], argv[5], "orbslam3-monocular",
+                    {argv[6], static_cast<std::uint32_t>(first_image.cols),
+                     static_cast<std::uint32_t>(first_image.rows),
+                     static_cast<std::uint32_t>(fps_value)},
+                    timestamp_origin, std::chrono::milliseconds(250)});
+            if (!publisher->Connect()) {
+                throw std::runtime_error(publisher->last_error());
+            }
+        }
         slam_remote::orbslam3::MonocularTracker tracker({argv[1], argv[2], false});
         std::size_t tracked_frames = 0;
         std::size_t lost_frames = 0;
@@ -82,8 +110,14 @@ int main(int argc, char** argv) {
             } else if (result.state == slam_remote::slam::TrackingState::kLost) {
                 ++lost_frames;
             }
+            if (publisher && !publisher->PublishTracking(result)) {
+                throw std::runtime_error(publisher->last_error());
+            }
         }
         tracker.Shutdown();
+        if (publisher && !publisher->EndSession()) {
+            throw std::runtime_error(publisher->last_error());
+        }
         if (tracked_frames == 0) {
             throw std::runtime_error("dataset never reached valid tracking");
         }

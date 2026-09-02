@@ -200,3 +200,35 @@ every frame ID and timestamp, and shut down without writing trajectory or map
 files. The viewer defaults to disabled because the telemetry process is
 headless. Saving trajectories remains an explicit responsibility of a future
 diagnostic, not a tracker shutdown side effect.
+
+## Live streamer boundary publisher
+
+`boundary::Publisher` connects to the Unix stream listener owned by the Rust
+Sender and writes boundary v1 frames synchronously. It has no application
+queue. A missing listener, send timeout, or disconnect closes the connection;
+the SLAM process never accumulates telemetry in memory. Strings, JSON-safe IDs,
+session-relative timestamps, finite translations, and unit quaternions are
+validated before writing. Protocol v1 and ZeroMQ remain entirely on the Rust
+side.
+
+Start the validating Rust diagnostic first:
+
+```bash
+cargo run --manifest-path sender/streamer/Cargo.toml \
+  --bin slam_boundary_dump -- --socket /private/tmp/slam-live.sock
+```
+
+Then append socket/session/camera/FPS arguments to the dataset replay command:
+
+```bash
+/private/tmp/slam-pose-adapter/orbslam3_dataset_pose_dump \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Examples/Monocular/TUM1.yaml \
+  /private/tmp/slam-remote-viewer-orbslam3/datasets/rgbd_dataset_freiburg1_xyz \
+  /private/tmp/slam-live.sock session-id camera-id 30
+```
+
+The verified local IPC run delivered one hello, all 798 tracking frames, and an
+orderly session end to the Rust adapter; 796 frames contained a valid pose. No
+image bytes, ORB-SLAM3 types, Protocol v1 JSON, or point-cloud data crossed this
+boundary.
