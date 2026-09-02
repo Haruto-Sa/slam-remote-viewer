@@ -172,6 +172,10 @@ pub struct LiveSlamConnection {
 }
 
 impl LiveSlamConnection {
+    pub fn try_clone_stream(&self) -> Result<UnixStream, LiveSlamInputError> {
+        self.stream.try_clone().map_err(LiveSlamInputError::Io)
+    }
+
     pub fn next_event(&mut self) -> Result<Option<LiveSlamEvent>, LiveSlamInputError> {
         let Some(message) = decode_frame(&mut self.stream).map_err(LiveSlamInputError::Decode)?
         else {

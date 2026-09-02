@@ -1,8 +1,8 @@
-# SLAM Mock Sender
+# SLAM Sender
 
-`slam-mock-sender` publishes deterministic Protocol v1 telemetry over a
-ZeroMQ PUB socket. It replaces the camera and SLAM backend while developing
-the Receiver and Unity viewer.
+`slam-mock-sender` publishes Protocol v1 telemetry over a ZeroMQ PUB socket.
+It supports the deterministic mock source and a live source fed by the local
+SLAM-to-streamer boundary.
 
 ## Published telemetry
 
@@ -55,9 +55,36 @@ A clean session requires `session_end` before EOF. Invalid input, truncated
 frames, and an early disconnect are returned as distinct errors. Dropping the
 listener removes only the socket file instance it created.
 
-Production socket selection and reconnect policy belong to the later live
-Sender integration. Tests use temporary local sockets and require no camera or
-ORB-SLAM3 installation.
+Tests use temporary local sockets and require no camera or ORB-SLAM3
+installation.
+
+## Publish live SLAM poses
+
+Start the Rust Sender before the C++ producer. It owns the Unix socket, validates
+the boundary stream, and is the only process that creates Protocol v1 JSON:
+
+```bash
+cargo run \
+  --manifest-path sender/streamer/Cargo.toml \
+  --bin slam-mock-sender \
+  -- \
+  --source live \
+  --slam-socket /private/tmp/slam-live.sock \
+  --endpoint 'tcp://127.0.0.1:5555'
+```
+
+The producer's boundary `hello` supplies the Protocol session and camera
+metadata. The Sender publishes settings immediately and every five seconds,
+then maps each valid `Twc` pose to `slam/v1/pose` while preserving frame ID,
+timestamp, and tracking state. Tracking frames without coordinates are not
+published because Protocol v1 pose messages require a position and orientation;
+no stale or fabricated pose is substituted. Point-cloud boundary events are
+accepted but intentionally not published by Issue #28.
+
+Ctrl-C closes an active boundary read, drops the ZeroMQ publisher with zero
+linger, and removes the Unix socket created by this process. A malformed frame,
+contract violation, or producer disconnect before `session_end` stops the Sender
+with an error instead of sending invalid telemetry.
 
 ## Requirements
 
@@ -110,6 +137,7 @@ cargo test --locked --manifest-path sender/streamer/Cargo.toml
 ```bash
 cargo run \
   --manifest-path sender/streamer/Cargo.toml \
+  --bin slam-mock-sender \
   -- \
   --endpoint 'tcp://127.0.0.1:5555'
 ```
@@ -121,6 +149,7 @@ Press Ctrl-C to stop cleanly.
 ```bash
 cargo run \
   --manifest-path sender/streamer/Cargo.toml \
+  --bin slam-mock-sender \
   -- \
   --endpoint 'tcp://127.0.0.1:5555' \
   --session integration-test \
@@ -139,6 +168,8 @@ arguments produce identical payloads.
 
 | Option | Default | Constraint |
 |---|---:|---|
+| `--source` | `mock` | `mock` or `live` |
+| `--slam-socket` | `/private/tmp/slam-remote-viewer.sock` | Unix socket owned by the live Sender |
 | `--endpoint` | `tcp://*:5555` | Valid ZeroMQ bind endpoint |
 | `--session` | `mock-session-001` | Non-empty string |
 | `--pose-rate-hz` | `30` | Finite and greater than zero |
@@ -146,8 +177,8 @@ arguments produce identical payloads.
 | `--angular-speed-rad-per-sec` | `0.5` | Finite and non-negative |
 | `--duration-sec` | unlimited | Finite and greater than zero |
 
-Run `cargo run --manifest-path sender/streamer/Cargo.toml -- --help` for the
-generated command reference.
+Run `cargo run --manifest-path sender/streamer/Cargo.toml --bin
+slam-mock-sender -- --help` for the generated command reference.
 
 ## Verify all topics
 
@@ -162,11 +193,25 @@ cargo run \
 
 Start the Mock Sender in another terminal. `packet_dump` exits successfully
 after receiving settings, pose, and point-cloud messages. It reports a timeout
-with a hint if no telemetry arrives within 30 seconds.
+with a hint if no telemetry arrives within five minutes. This allows time for
+ORB-SLAM3 vocabulary loading during a live-path check.
+
+For the live Sender, which does not publish point clouds in Issue #28, append
+`--pose-only` after the endpoint. The diagnostic then succeeds after receiving
+canonical settings and one pose:
+
+```bash
+cargo run \
+  --manifest-path sender/streamer/Cargo.toml \
+  --example packet_dump \
+  -- 'tcp://127.0.0.1:5555' --pose-only
+```
 
 ## Known limitations
 
 - PUB/SUB is lossy and v1 has no replay or point-cloud snapshot.
-- The point cloud is a fixed two-point fixture.
-- Settings and point-cloud messages are repeated so late subscribers can
-  recover the current mock state.
+- Mock point cloud is a fixed two-point fixture.
+- Live point-cloud publication and reconnecting a second producer are outside
+  Issue #28.
+- Settings are repeated so a late subscriber can recover the live session
+  contract. Mock point-cloud messages are also repeated.

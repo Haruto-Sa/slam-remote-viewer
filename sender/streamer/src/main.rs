@@ -1,9 +1,13 @@
 use std::{
     error::Error,
+    net::Shutdown,
+    os::unix::net::UnixStream,
+    path::PathBuf,
     process,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
+        mpsc::{self, RecvTimeoutError},
     },
     thread,
     time::{Duration, Instant},
@@ -12,14 +16,17 @@ use std::{
 use slam_mock_sender::{
     POINTCLOUD_TOPIC, POSE_TOPIC, PointCloudDeltaMessage, PoseMessage, SETTINGS_TOPIC,
     SettingsMessage,
+    live_protocol::LiveProtocolPublisher,
+    live_slam_input::{LiveSlamEvent, LiveSlamListener},
     pose_source::{MockPoseSource, PoseSource},
     publish_json,
 };
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 const DEFAULT_ENDPOINT: &str = "tcp://*:5555";
 const DEFAULT_SESSION: &str = "mock-session-001";
+const DEFAULT_SLAM_SOCKET: &str = "/private/tmp/slam-remote-viewer.sock";
 
 const POSE_RATE_HZ: f64 = 30.0;
 const SETTINGS_INTERVAL: Duration = Duration::from_secs(5);
@@ -30,7 +37,7 @@ const ANGULAR_SPEED_RAD_PER_SEC: f64 = 0.5;
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("mock sender failed: {error}");
+        eprintln!("sender failed: {error}");
         process::exit(1);
     }
 }
@@ -38,9 +45,15 @@ fn main() {
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Publish deterministic Protocol v1 telemetry over ZeroMQ"
+    about = "Publish mock or live SLAM telemetry as Protocol v1 over ZeroMQ"
 )]
 struct Cli {
+    /// Pose input backend.
+    #[arg(long, value_enum, default_value_t = SourceKind::Mock)]
+    source: SourceKind,
+    /// Unix socket listened on when --source live.
+    #[arg(long, default_value = DEFAULT_SLAM_SOCKET)]
+    slam_socket: PathBuf,
     /// ZeroMQ PUB endpoint to bind
     #[arg(long, default_value = DEFAULT_ENDPOINT)]
     endpoint: String,
@@ -82,6 +95,12 @@ struct Cli {
     duration_sec: Option<f64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum SourceKind {
+    Mock,
+    Live,
+}
+
 fn parse_positive_f64(value: &str) -> Result<f64, String> {
     let parsed = value
         .parse::<f64>()
@@ -119,6 +138,22 @@ fn parse_non_empty_string(value: &str) -> Result<String, String> {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse();
+    match cli.source {
+        SourceKind::Mock => run_mock(cli),
+        SourceKind::Live => run_live(cli),
+    }
+}
+
+fn configure_publisher(endpoint: &str) -> Result<(zmq::Context, zmq::Socket), Box<dyn Error>> {
+    let context = zmq::Context::new();
+    let publisher = context.socket(zmq::PUB)?;
+    publisher.set_linger(0)?;
+    publisher.bind(endpoint)?;
+    Ok((context, publisher))
+}
+
+fn run_mock(cli: Cli) -> Result<(), Box<dyn Error>> {
     let Cli {
         endpoint,
         session,
@@ -126,7 +161,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         radius_m,
         angular_speed_rad_per_sec,
         duration_sec,
-    } = Cli::parse();
+        ..
+    } = cli;
     let mut pose_source = MockPoseSource::new(
         pose_rate_hz,
         radius_m,
@@ -140,11 +176,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         signal_running.store(false, Ordering::SeqCst);
     })?;
 
-    let context = zmq::Context::new();
-    let publisher = context.socket(zmq::PUB)?;
-
-    publisher.set_linger(0)?;
-    publisher.bind(&endpoint)?;
+    let (_context, publisher) = configure_publisher(&endpoint)?;
 
     println!("mock sender publishing to {endpoint}");
     println!("press Ctrl-C to stop");
@@ -202,6 +234,98 @@ fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn run_live(cli: Cli) -> Result<(), Box<dyn Error>> {
+    let mut listener = LiveSlamListener::bind(&cli.slam_socket)?;
+    let running = Arc::new(AtomicBool::new(true));
+    let interrupt_stream = Arc::new(Mutex::new(None::<UnixStream>));
+    let signal_running = Arc::clone(&running);
+    let signal_stream = Arc::clone(&interrupt_stream);
+    let wake_socket = cli.slam_socket.clone();
+    ctrlc::set_handler(move || {
+        signal_running.store(false, Ordering::SeqCst);
+        if let Ok(guard) = signal_stream.lock()
+            && let Some(stream) = guard.as_ref()
+        {
+            let _ = stream.shutdown(Shutdown::Both);
+        } else {
+            let _ = UnixStream::connect(&wake_socket);
+        }
+    })?;
+
+    let (_context, publisher) = configure_publisher(&cli.endpoint)?;
+    println!(
+        "live sender listening on {} and publishing to {}",
+        cli.slam_socket.display(),
+        cli.endpoint
+    );
+    println!("press Ctrl-C to stop");
+    thread::sleep(Duration::from_millis(250));
+
+    let connection = listener.accept()?;
+    if !running.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    *interrupt_stream
+        .lock()
+        .map_err(|_| "live SLAM interrupt lock poisoned")? = Some(connection.try_clone_stream()?);
+
+    let (event_sender, event_receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut connection = connection;
+        loop {
+            let result = connection.next_event();
+            let finished = matches!(
+                result,
+                Ok(None) | Ok(Some(LiveSlamEvent::SessionEnded { .. }))
+            ) || result.is_err();
+            if event_sender.send(result).is_err() || finished {
+                break;
+            }
+        }
+    });
+
+    let mut live_publisher = LiveProtocolPublisher::default();
+
+    while running.load(Ordering::SeqCst) {
+        match event_receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(Some(event))) => {
+                match &event {
+                    LiveSlamEvent::SessionStarted { producer, .. } => {
+                        println!("accepted live producer {producer}; publishing {SETTINGS_TOPIC}");
+                    }
+                    LiveSlamEvent::SessionEnded { session_id, reason } => {
+                        println!("live session ended: session={session_id} reason={reason}");
+                    }
+                    _ => {}
+                }
+                if live_publisher.handle_event(&publisher, event, Instant::now())? {
+                    break;
+                }
+            }
+            Ok(Ok(None)) => break,
+            Ok(Err(_)) if !running.load(Ordering::SeqCst) => break,
+            Ok(Err(error)) => return Err(error.into()),
+            Err(RecvTimeoutError::Timeout) => {
+                live_publisher.publish_due_settings(&publisher, Instant::now())?;
+            }
+            Err(RecvTimeoutError::Disconnected) if !running.load(Ordering::SeqCst) => break,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err("live SLAM reader stopped unexpectedly".into());
+            }
+        }
+    }
+    interrupt_stream
+        .lock()
+        .map_err(|_| "live SLAM interrupt lock poisoned")?
+        .take();
+    println!(
+        "live sender stopped: poses={}, skipped_without_pose={}",
+        live_publisher.poses_published(),
+        live_publisher.skipped_without_pose()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +335,8 @@ mod tests {
         let cli = Cli::try_parse_from(["slam-mock-sender"]).expect("default arguments must parse");
 
         assert_eq!(cli.endpoint, DEFAULT_ENDPOINT);
+        assert_eq!(cli.source, SourceKind::Mock);
+        assert_eq!(cli.slam_socket, PathBuf::from(DEFAULT_SLAM_SOCKET));
         assert_eq!(cli.session, DEFAULT_SESSION);
         assert_eq!(cli.pose_rate_hz, POSE_RATE_HZ);
         assert_eq!(cli.radius_m, TRAJECTORY_RADIUS_M);
@@ -255,5 +381,23 @@ mod tests {
         let result = Cli::try_parse_from(["slam-mock-sender", "--pose-rate-hz", "0"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parses_live_source_and_socket() {
+        let cli = Cli::try_parse_from([
+            "slam-mock-sender",
+            "--source",
+            "live",
+            "--slam-socket",
+            "/private/tmp/test-live.sock",
+        ])
+        .expect("live source arguments must parse");
+
+        assert_eq!(cli.source, SourceKind::Live);
+        assert_eq!(
+            cli.slam_socket,
+            PathBuf::from("/private/tmp/test-live.sock")
+        );
     }
 }

@@ -2,6 +2,7 @@ use std::{error::Error, fmt};
 
 use serde::Serialize;
 
+pub mod live_protocol;
 pub mod live_slam_input;
 pub mod pose_source;
 pub mod slam_boundary;
@@ -100,6 +101,32 @@ impl SettingsMessage {
                 width: 1280,
                 height: 720,
                 fps: 30,
+            },
+            pointcloud_mode: "delta".to_owned(),
+        }
+    }
+
+    pub fn live(
+        session: impl Into<String>,
+        camera_type: impl Into<String>,
+        camera_id: impl Into<String>,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> Self {
+        Self {
+            v: PROTOCOL_VERSION,
+            session: session.into(),
+            unit: "m".to_owned(),
+            frame: "slam_world".to_owned(),
+            pose_convention: "Twc".to_owned(),
+            quaternion: "xyzw".to_owned(),
+            camera: CameraSettings {
+                camera_type: camera_type.into(),
+                id: camera_id.into(),
+                width,
+                height,
+                fps,
             },
             pointcloud_mode: "delta".to_owned(),
         }
@@ -213,6 +240,17 @@ mod tests {
     #[test]
     fn uses_protocol_v1_settings_topic() {
         assert_eq!(SETTINGS_TOPIC, "slam/v1/settings");
+    }
+
+    #[test]
+    fn serializes_live_settings_with_canonical_pose_contract() {
+        let message = SettingsMessage::live("live-session", "monocular", "camera-1", 640, 480, 30);
+        let actual = serde_json::to_value(message).expect("live settings must serialize");
+        assert_eq!(actual["session"], "live-session");
+        assert_eq!(actual["frame"], "slam_world");
+        assert_eq!(actual["pose_convention"], "Twc");
+        assert_eq!(actual["quaternion"], "xyzw");
+        assert_eq!(actual["camera"]["id"], "camera-1");
     }
 
     #[test]
