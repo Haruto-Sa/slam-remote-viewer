@@ -8,6 +8,10 @@ use slam_mock_sender::live_slam_input::{LiveSlamEvent, LiveSlamListener};
 struct Args {
     #[arg(long)]
     socket: PathBuf,
+
+    /// Accept and summarize point-cloud deltas instead of treating them as unexpected.
+    #[arg(long)]
+    allow_pointcloud: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,6 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut connection = listener.accept()?;
     let mut tracking_frames = 0_u64;
     let mut tracked_poses = 0_u64;
+    let mut pointcloud_deltas = 0_u64;
+    let mut pointcloud_operations = 0_usize;
     loop {
         match connection.next_event()? {
             Some(LiveSlamEvent::SessionStarted {
@@ -33,12 +39,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tracked_poses += 1;
                 }
             }
-            Some(LiveSlamEvent::PointCloudDelta(_)) => {
-                return Err("unexpected point-cloud delta in pose-only session".into());
+            Some(LiveSlamEvent::PointCloudDelta(delta)) => {
+                if !args.allow_pointcloud {
+                    return Err(
+                        "unexpected point-cloud delta; pass --allow-pointcloud to accept it".into(),
+                    );
+                }
+                pointcloud_deltas += 1;
+                pointcloud_operations += delta.add.len() + delta.update.len() + delta.remove.len();
             }
             Some(LiveSlamEvent::SessionEnded { session_id, reason }) => println!(
-                "session_ended session={} reason={} frames={} poses={}",
-                session_id, reason, tracking_frames, tracked_poses
+                "session_ended session={} reason={} frames={} poses={} pointcloud_deltas={} pointcloud_operations={}",
+                session_id,
+                reason,
+                tracking_frames,
+                tracked_poses,
+                pointcloud_deltas,
+                pointcloud_operations
             ),
             None => break,
         }

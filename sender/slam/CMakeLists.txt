@@ -41,7 +41,9 @@ target_link_libraries(slam_point_cloud_delta_reducer PUBLIC slam::camera_contrac
 
 add_library(slam_boundary_publisher src/boundary_publisher.cpp)
 add_library(slam::boundary_publisher ALIAS slam_boundary_publisher)
-target_link_libraries(slam_boundary_publisher PUBLIC slam::pose_model)
+target_link_libraries(
+    slam_boundary_publisher PUBLIC slam::pose_model slam::point_cloud_delta_reducer
+)
 
 if(SLAM_ENABLE_ORB_SLAM3)
     if(NOT IS_DIRECTORY "${SLAM_ORB_SLAM3_ROOT}")
@@ -72,7 +74,7 @@ if(SLAM_ENABLE_ORB_SLAM3)
     )
     target_link_libraries(
         slam_orbslam3_pose_adapter
-        PUBLIC slam::pose_model
+        PUBLIC slam::pose_model slam::point_cloud_delta_reducer
         PRIVATE
             Eigen3::Eigen
             Boost::serialization

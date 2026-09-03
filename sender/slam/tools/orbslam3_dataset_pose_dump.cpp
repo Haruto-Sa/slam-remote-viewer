@@ -16,6 +16,7 @@
 #include "slam_remote/camera/image_frame.hpp"
 #include "slam_remote/boundary/publisher.hpp"
 #include "slam_remote/orbslam3/monocular_tracker.hpp"
+#include "slam_remote/slam/point_cloud_delta_reducer.hpp"
 
 namespace {
 
@@ -52,9 +53,9 @@ std::vector<DatasetFrame> LoadTumIndex(const std::string& sequence_path) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 4 && argc != 8) {
+    if (argc != 4 && argc != 8 && argc != 9) {
         std::cerr << "usage: orbslam3_dataset_pose_dump VOCABULARY SETTINGS TUM_SEQUENCE"
-                     " [SOCKET_PATH SESSION_ID CAMERA_ID FPS]\n";
+                     " [SOCKET_PATH SESSION_ID CAMERA_ID FPS [POINTCLOUD_PERIOD_FRAMES]]\n";
         return 2;
     }
     try {
@@ -68,10 +69,17 @@ int main(int argc, char** argv) {
         const auto timestamp_origin = std::chrono::nanoseconds(
             std::llround(frames.front().timestamp_seconds * 1'000'000'000.0));
         std::unique_ptr<slam_remote::boundary::Publisher> publisher;
-        if (argc == 8) {
+        std::size_t pointcloud_period = 30;
+        if (argc == 8 || argc == 9) {
             const auto fps_value = std::stoul(argv[7]);
             if (fps_value == 0 || fps_value > std::numeric_limits<std::uint32_t>::max()) {
                 throw std::invalid_argument("FPS must be a positive uint32 value");
+            }
+            if (argc == 9) {
+                pointcloud_period = std::stoul(argv[8]);
+                if (pointcloud_period == 0) {
+                    throw std::invalid_argument("point-cloud period must be positive");
+                }
             }
             publisher = std::make_unique<slam_remote::boundary::Publisher>(
                 slam_remote::boundary::PublisherConfig{
@@ -85,8 +93,10 @@ int main(int argc, char** argv) {
             }
         }
         slam_remote::orbslam3::MonocularTracker tracker({argv[1], argv[2], false});
+        slam_remote::slam::PointCloudDeltaReducer pointcloud_reducer;
         std::size_t tracked_frames = 0;
         std::size_t lost_frames = 0;
+        std::size_t pointcloud_deltas = 0;
         for (std::size_t index = 0; index < frames.size(); ++index) {
             const auto& dataset_frame = frames[index];
             cv::Mat image = cv::imread(sequence_path + "/" + dataset_frame.relative_path,
@@ -113,6 +123,16 @@ int main(int argc, char** argv) {
             if (publisher && !publisher->PublishTracking(result)) {
                 throw std::runtime_error(publisher->last_error());
             }
+            if (publisher && index % pointcloud_period == 0) {
+                const auto delta = pointcloud_reducer.Reduce(tracker.ActiveMapPoints());
+                if (delta.operation_count() > 0 &&
+                    !publisher->PublishPointCloud(result.frame_id, result.timestamp, delta)) {
+                    throw std::runtime_error(publisher->last_error());
+                }
+                if (delta.operation_count() > 0) {
+                    ++pointcloud_deltas;
+                }
+            }
         }
         tracker.Shutdown();
         if (publisher && !publisher->EndSession()) {
@@ -122,7 +142,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("dataset never reached valid tracking");
         }
         std::cout << "ORB-SLAM3 pose adapter replay passed: frames=" << frames.size()
-                  << " tracked=" << tracked_frames << " lost=" << lost_frames << '\n';
+                  << " tracked=" << tracked_frames << " lost=" << lost_frames
+                  << " pointcloud_deltas=" << pointcloud_deltas << '\n';
     } catch (const std::exception& error) {
         std::cerr << "ORB-SLAM3 pose adapter replay failed: " << error.what() << '\n';
         return 1;

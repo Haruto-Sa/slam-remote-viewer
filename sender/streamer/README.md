@@ -196,9 +196,9 @@ after receiving settings, pose, and point-cloud messages. It reports a timeout
 with a hint if no telemetry arrives within five minutes. This allows time for
 ORB-SLAM3 vocabulary loading during a live-path check.
 
-For the live Sender, which does not publish point clouds in Issue #28, append
-`--pose-only` after the endpoint. The diagnostic then succeeds after receiving
-canonical settings and one pose:
+For the live Sender, which does not yet publish boundary point-cloud deltas as
+Protocol v1, append `--pose-only` after the endpoint. The diagnostic then
+succeeds after receiving canonical settings and one pose:
 
 ```bash
 cargo run \
@@ -211,7 +211,7 @@ cargo run \
 
 - PUB/SUB is lossy and v1 has no replay or point-cloud snapshot.
 - Mock point cloud is a fixed two-point fixture.
-- Live point-cloud publication and reconnecting a second producer are outside
-  Issue #28.
+- Live Protocol v1 point-cloud publication and reconnecting a second producer
+  remain outside the current live session contract.
 - Settings are repeated so a late subscriber can recover the live session
   contract. Mock point-cloud messages are also repeated.

@@ -4,7 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 lock_file="${repo_root}/sender/slam/orbslam3/dependencies.lock.sh"
-patch_file="${repo_root}/sender/slam/orbslam3/patches/0001-macos-arm64-cmake.patch"
+patch_directory="${repo_root}/sender/slam/orbslam3/patches"
 
 # shellcheck source=/dev/null
 source "${lock_file}"
@@ -95,13 +95,15 @@ cmake --build "${build_root}/pangolin" --parallel "${jobs}"
 cmake --install "${build_root}/pangolin"
 
 orb_source="${source_root}/ORB_SLAM3"
-if git -C "${orb_source}" apply --unidiff-zero --reverse --check "${patch_file}" >/dev/null 2>&1; then
-    echo "ORB-SLAM3 macOS patch already applied"
-elif git -C "${orb_source}" apply --unidiff-zero --check "${patch_file}" >/dev/null 2>&1; then
-    git -C "${orb_source}" apply --unidiff-zero "${patch_file}"
-else
-    fail "ORB-SLAM3 source has unexpected changes; use a fresh temporary work root"
-fi
+for patch_file in "${patch_directory}"/*.patch; do
+    if git -C "${orb_source}" apply --unidiff-zero --reverse --check "${patch_file}" >/dev/null 2>&1; then
+        echo "ORB-SLAM3 patch already applied: $(basename "${patch_file}")"
+    elif git -C "${orb_source}" apply --unidiff-zero --check "${patch_file}" >/dev/null 2>&1; then
+        git -C "${orb_source}" apply --unidiff-zero "${patch_file}"
+    else
+        fail "ORB-SLAM3 source has unexpected changes; use a fresh temporary work root"
+    fi
+done
 
 cmake -S "${orb_source}/Thirdparty/DBoW2" -B "${build_root}/dbow2" \
     -DCMAKE_BUILD_TYPE=Release \
