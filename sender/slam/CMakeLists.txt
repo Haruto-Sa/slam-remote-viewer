@@ -35,6 +35,10 @@ add_library(slam_pose_model src/pose.cpp)
 add_library(slam::pose_model ALIAS slam_pose_model)
 target_link_libraries(slam_pose_model PUBLIC slam::camera_contracts)
 
+add_library(slam_point_cloud_delta_reducer src/point_cloud_delta_reducer.cpp)
+add_library(slam::point_cloud_delta_reducer ALIAS slam_point_cloud_delta_reducer)
+target_link_libraries(slam_point_cloud_delta_reducer PUBLIC slam::camera_contracts)
+
 add_library(slam_boundary_publisher src/boundary_publisher.cpp)
 add_library(slam::boundary_publisher ALIAS slam_boundary_publisher)
 target_link_libraries(slam_boundary_publisher PUBLIC slam::pose_model)
@@ -108,6 +112,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_pose_model PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(
+        slam_point_cloud_delta_reducer PRIVATE -Wall -Wextra -Wpedantic -Werror
+    )
     target_compile_options(slam_boundary_publisher PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
@@ -212,4 +219,17 @@ if(SLAM_BUILD_TESTS)
         )
     endif()
     add_test(NAME boundary_publisher_tests COMMAND boundary_publisher_tests)
+
+    add_executable(
+        point_cloud_delta_reducer_tests tests/point_cloud_delta_reducer_tests.cpp
+    )
+    target_link_libraries(
+        point_cloud_delta_reducer_tests PRIVATE slam::point_cloud_delta_reducer
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(
+            point_cloud_delta_reducer_tests PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME point_cloud_delta_reducer_tests COMMAND point_cloud_delta_reducer_tests)
 endif()
