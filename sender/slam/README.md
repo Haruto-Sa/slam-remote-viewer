@@ -261,17 +261,17 @@ the device ID and capture mode directly. The ORB settings file still controls
 SLAM intrinsics. A camera-specific calibration is recommended before evaluating
 pose accuracy, but is not required to exercise the live telemetry path.
 
-Start `packet_dump --pose-only`, then the Rust Sender, before starting the C++
-producer:
+Start the Rust Sender, then `packet_dump`, before starting the C++ producer.
+The diagnostic requires settings, pose, and point-cloud topics:
 
 ```bash
-cargo run --manifest-path sender/streamer/Cargo.toml \
-  --example packet_dump -- 'tcp://127.0.0.1:5555' --pose-only
-
 cargo run --manifest-path sender/streamer/Cargo.toml \
   --bin slam-mock-sender -- --source live \
   --slam-socket /private/tmp/slam-live.sock \
   --endpoint 'tcp://127.0.0.1:5555'
+
+cargo run --manifest-path sender/streamer/Cargo.toml \
+  --example packet_dump -- 'tcp://127.0.0.1:5555'
 
 /private/tmp/slam-pose-adapter/orbslam3_macos_camera_sender \
   /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt \
@@ -286,8 +286,8 @@ point-cloud deltas, camera drops, tracking-state transitions, observed input
 FPS, processed FPS, and mean ORB-SLAM3 tracking time. No image is sent or saved.
 
 The Rust Sender publishes validated live poses and point-cloud deltas as
-Protocol v1. Run `packet_dump` without `--pose-only` to require settings, pose,
-and point-cloud topics during this check.
+Protocol v1. `packet_dump` waits up to five minutes for all three topics. A
+timeout is expected if no producer supplies telemetry during that window.
 
 Ctrl-C is cooperative while `TrackMonocular` is returning normally. If an
 upstream ORB-SLAM3 call does not return, a five-second watchdog terminates the
@@ -323,11 +323,11 @@ and no camera/SLAM process remains after shutdown. Coordinate accuracy,
 calibration RMS, controlled-axis motion, and quantitative performance thresholds
 are follow-up validation rather than blockers for the first live display.
 
-The 2026-09-03 Apple Silicon MVP run at `640x480@30` delivered 643 live poses
-from 900 camera frames with zero camera drops. Rust published those poses as
-Protocol v1 and ended cleanly. See
-[`../../docs/live-slam-conformance.md`](../../docs/live-slam-conformance.md) for
-the measurements and the remaining Unity visual check.
+The 2026-09-05 Apple Silicon E2E run at `640x480@30` delivered 72 live poses and
+two point-cloud deltas from 900 camera frames, with 12 camera drops. A Receiver
+on a second computer accepted the session and Unity displayed the point cloud.
+See [`../../docs/live-slam-conformance.md`](../../docs/live-slam-conformance.md)
+for both the earlier transport measurements and the completed E2E evidence.
 
 ### Two-computer Unity MVP check
 
@@ -355,6 +355,7 @@ cargo run --manifest-path sender/streamer/Cargo.toml \
 Allow inbound TCP port 5555 on the sender Mac; ports 5556 and 5557 stay local to
 the Receiver/Unity computer. Move the monocular camera slowly sideways while
 keeping a textured scene visible so ORB-SLAM3 can initialize. The MVP passes
-when the Receiver accepts settings and at least one pose, Unity shows the live
-camera/frustum moving, and all processes exit after the finite frame limit or
-Ctrl-C.
+when the Receiver accepts settings, pose, and point-cloud telemetry, Unity shows
+the live camera/frustum and point cloud, and all processes exit after the finite
+frame limit or Ctrl-C. This gate was completed on 2026-09-05; camera-specific
+calibration remains a quality improvement rather than an E2E prerequisite.

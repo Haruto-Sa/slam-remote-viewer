@@ -77,15 +77,15 @@ poses, skipped 257 pose-less initialization frames, and ended the session
 cleanly. `packet_dump --pose-only` observed live Protocol v1 pose sequence
 numbers through 899.
 
-This passes the camera-to-Protocol-v1 portion of the MVP. Receiver/Unity visual
-confirmation remains a separate manual check. Because provisional intrinsics
-were used, this run makes no pose-accuracy or coordinate-direction claim.
+This passed the camera-to-Protocol-v1 portion of the MVP. Because provisional
+intrinsics were used, this run makes no pose-accuracy or coordinate-direction
+claim.
 
 A second computer connected to the sender Mac and accepted settings plus live
 pose sequence numbers 120 through 185, confirming the network and Receiver
 portion of the path. The initially attempted LAN address received no messages;
 using the sender Mac's actual address resolved the issue without a code change.
-Unity visual confirmation remains outstanding.
+That run established the network path before the final Unity visual check.
 
 The Ctrl-C path was also exercised during a 9,000-frame live run. The normal
 cooperative path printed `Shutdown`, sent `session_end` with reason
@@ -110,3 +110,39 @@ printed the success summary, and returned exit code zero. A separate live-camera
 run received Ctrl-C after 722 frames, immediately printed `Shutdown`, sent an
 orderly `session_end` with reason `interrupted`, and left no producer or boundary
 diagnostic process running.
+
+## 2026-09-05 complete two-computer MVP result
+
+The complete live path was verified from the Apple Silicon sender through a
+second computer:
+
+```text
+macOS camera -> ORB-SLAM3 -> boundary v1 -> Rust Sender
+             -> Protocol v1 ZeroMQ -> Receiver -> Unity
+```
+
+At `640x480@30`, the finite 900-frame session produced 72 valid poses, two
+non-empty point-cloud deltas, 12 camera drops, and one tracking-state change.
+The Rust Sender reported all 900 tracking events, published 72 poses and two
+point-cloud messages, skipped 828 pose-less frames, received an orderly
+`session_end`, and stopped normally. The Receiver on the second computer
+accepted the live session, and Unity displayed the resulting point cloud. This
+completes the MVP camera-to-Unity gate for settings, pose, point-cloud delta,
+Protocol v1 conversion, and cross-computer delivery.
+
+The run used the TUM1 example intrinsics with a different physical camera. It
+therefore proves transport and visualization, not pose accuracy, scale accuracy,
+or calibrated point-cloud quality. The relatively low pose count is retained as
+operational evidence rather than hidden by an MVP threshold.
+
+Start the Receiver and Unity subscriber first, then the Rust Sender, any local
+`packet_dump`, and finally the C++ producer. Only TCP port 5555 must be reachable
+on the sender Mac; Receiver output ports 5556 and 5557 remain local to the Unity
+computer. A `packet_dump` timeout means that it did not observe all expected
+topics during its five-minute window. In particular, starting it without a live
+producer and waiting past that window is expected to time out and does not by
+itself indicate a broken Sender or network path.
+
+The remaining work is post-MVP operational quality: unlimited run-until-stop,
+sender-side diagnostics and controls, optional camera calibration, and tracking
+quality improvements. None changes the completed Protocol v1 E2E result.
