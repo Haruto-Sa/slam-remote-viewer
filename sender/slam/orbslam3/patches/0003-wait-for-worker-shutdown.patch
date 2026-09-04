@@ -1,11 +1,84 @@
+diff --git a/include/LoopClosing.h b/include/LoopClosing.h
+index c9ccb26..e6aaef3 100644
+--- a/include/LoopClosing.h
++++ b/include/LoopClosing.h
+@@ -80,0 +81,2 @@ public:
++    void JoinGlobalBundleAdjustment();
++
+diff --git a/src/LoopClosing.cc b/src/LoopClosing.cc
+index 319afb5..aa4d6b8 100644
+--- a/src/LoopClosing.cc
++++ b/src/LoopClosing.cc
+@@ -2512,0 +2513,13 @@ void LoopClosing::RunGlobalBundleAdjustment(Map* pActiveMap, unsigned long nLoop
++void LoopClosing::JoinGlobalBundleAdjustment()
++{
++    // System calls this only after the Loop Closing worker has finished, so it
++    // can no longer replace mpThreadGBA.
++    if(mpThreadGBA)
++    {
++        if(mpThreadGBA->joinable())
++            mpThreadGBA->join();
++        delete mpThreadGBA;
++        mpThreadGBA = NULL;
++    }
++}
++
 diff --git a/src/System.cc b/src/System.cc
-index 42d7c92..5d725b4 100644
+index 60d9c51..61a81c5 100644
 --- a/src/System.cc
 +++ b/src/System.cc
-@@ -530,0 +531,6 @@ void System::Shutdown()
-+    // Do not let process teardown race worker access to ORB-SLAM3 mutexes.
+@@ -518,0 +519,2 @@ void System::Shutdown()
++        if(mbShutDown)
++            return;
+@@ -526 +528 @@ void System::Shutdown()
+-    /*if(mpViewer)
++    if(mpViewer)
+@@ -529,3 +531 @@ void System::Shutdown()
+-        while(!mpViewer->isFinished())
+-            usleep(5000);
+-    }*/
++    }
+@@ -533,2 +533,4 @@ void System::Shutdown()
+-    // Wait until all thread have effectively stopped
+-    /*while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
++    // Wait until all workers have stopped touching System-owned state before
++    // joining and releasing their thread handles.
 +    while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() ||
-+          mpLoopCloser->isRunningGBA())
-+    {
++          mpLoopCloser->isRunningGBA() || (mpViewer && !mpViewer->isFinished()))
+@@ -536,11 +538,25 @@ void System::Shutdown()
+-        if(!mpLocalMapper->isFinished())
+-            cout << "mpLocalMapper is not finished" << endl;*/
+-        /*if(!mpLoopCloser->isFinished())
+-            cout << "mpLoopCloser is not finished" << endl;
+-        if(mpLoopCloser->isRunningGBA()){
+-            cout << "mpLoopCloser is running GBA" << endl;
+-            cout << "break anyway..." << endl;
+-            break;
+-        }*/
+-        /*usleep(5000);
+-    }*/
 +        usleep(5000);
 +    }
++
++    if(mptLocalMapping)
++    {
++        if(mptLocalMapping->joinable())
++            mptLocalMapping->join();
++        delete mptLocalMapping;
++        mptLocalMapping = NULL;
++    }
++    if(mptLoopClosing)
++    {
++        if(mptLoopClosing->joinable())
++            mptLoopClosing->join();
++        delete mptLoopClosing;
++        mptLoopClosing = NULL;
++    }
++    if(mpViewer && mptViewer)
++    {
++        if(mptViewer->joinable())
++            mptViewer->join();
++        delete mptViewer;
++        mptViewer = NULL;
++    }
++    mpLoopCloser->JoinGlobalBundleAdjustment();

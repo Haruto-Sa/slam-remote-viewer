@@ -296,11 +296,27 @@ forced path cannot send `session_end`; the Rust Sender will report a producer
 disconnect, which distinguishes it from a clean shutdown. `Ctrl-D` is not a
 process-stop operation.
 
-The pinned ORB-SLAM3 revision normally only requests worker shutdown. The
-bootstrap patch series restores its worker-completion wait so process teardown
-cannot race Local Mapping or Loop Closing access to internal mutexes. A normal
-dataset or live completion must therefore exit without an exception after its
-success summary.
+The pinned ORB-SLAM3 revision normally only requests worker shutdown. An early
+version of the bootstrap shutdown patch placed its wait loop inside an upstream
+block comment, so it compiled to no operation and allowed process teardown to
+race worker access to internal mutexes. The corrected patch makes shutdown
+idempotent, waits for Local Mapping, Loop Closing, global bundle adjustment, and
+the optional Viewer, then joins their thread handles before teardown. A normal
+dataset or live completion must exit without an exception after its success
+summary.
+
+After rebuilding ORB-SLAM3 and this adapter, exercise the teardown repeatedly:
+
+```bash
+./tools/repeat-test-orbslam3-shutdown.sh \
+  /private/tmp/slam-pose-adapter/orbslam3_dataset_pose_dump \
+  /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3 \
+  /private/tmp/slam-remote-viewer-orbslam3/datasets/rgbd_dataset_freiburg1_xyz
+```
+
+The default is ten complete replays. Every run must print the success summary
+and return exit code zero; a signal or exception after the summary fails the
+script through `pipefail`.
 
 For the MVP, verify settings precede any pose, the Receiver accepts the session,
 and no camera/SLAM process remains after shutdown. Coordinate accuracy,
