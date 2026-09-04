@@ -12,6 +12,7 @@
 #include "slam_remote/boundary/publisher.hpp"
 #include "slam_remote/camera/macos_camera_source.hpp"
 #include "slam_remote/orbslam3/monocular_tracker.hpp"
+#include "slam_remote/slam/point_cloud_delta_reducer.hpp"
 
 namespace {
 volatile std::sig_atomic_t running = 1;
@@ -68,9 +69,10 @@ std::uint32_t Positive(const char* value, const char* name) {
 
 int main(int argc, char** argv) {
     using namespace std::chrono_literals;
-    if (argc != 11) {
+    if (argc != 11 && argc != 12) {
         std::cerr << "usage: orbslam3_macos_camera_sender VOCABULARY SETTINGS DEVICE_ID WIDTH "
-                     "HEIGHT FPS SOCKET SESSION CAMERA_ID FRAME_LIMIT\n";
+                     "HEIGHT FPS SOCKET SESSION CAMERA_ID FRAME_LIMIT "
+                     "[POINTCLOUD_PERIOD_FRAMES]\n";
         return EXIT_FAILURE;
     }
     try {
@@ -78,6 +80,8 @@ int main(int argc, char** argv) {
         const auto height = Positive(argv[5], "HEIGHT");
         const auto fps = Positive(argv[6], "FPS");
         const auto frame_limit = Positive(argv[10], "FRAME_LIMIT");
+        const auto pointcloud_period =
+            argc == 12 ? Positive(argv[11], "POINTCLOUD_PERIOD_FRAMES") : 30;
         slam_remote::camera::CameraCalibration calibration{
             argv[3], width, height, slam_remote::camera::CameraModel::kPinhole,
             static_cast<double>(width), static_cast<double>(height),
@@ -105,6 +109,8 @@ int main(int argc, char** argv) {
         std::signal(SIGINT, HandleSignal);
         InterruptWatchdog interrupt_watchdog;
         std::uint64_t frames = 0, poses = 0, state_changes = 0;
+        std::uint64_t pointcloud_deltas = 0;
+        slam_remote::slam::PointCloudDeltaReducer pointcloud_reducer;
         double tracking_seconds = 0.0;
         auto frame = std::move(*first.frame);
         const auto first_timestamp = frame.timestamp();
@@ -123,6 +129,15 @@ int main(int argc, char** argv) {
             if (result.pose) ++poses;
             if (!publisher.PublishTracking(result)) {
                 throw std::runtime_error(publisher.last_error());
+            }
+            if (frames % pointcloud_period == 0) {
+                const auto delta = pointcloud_reducer.Reduce(tracker.ActiveMapPoints());
+                if (delta.operation_count() > 0) {
+                    if (!publisher.PublishPointCloud(result.frame_id, result.timestamp, delta)) {
+                        throw std::runtime_error(publisher.last_error());
+                    }
+                    ++pointcloud_deltas;
+                }
             }
             ++frames;
             if (frames >= frame_limit) break;
@@ -144,6 +159,7 @@ int main(int argc, char** argv) {
             std::chrono::duration<double>(last_timestamp - first_timestamp).count();
         std::cout << "live SLAM session passed: frames=" << frames << " poses=" << poses
                   << " dropped=" << source.dropped_frames() << " state_changes=" << state_changes
+                  << " pointcloud_deltas=" << pointcloud_deltas
                   << " input_fps=" << (input_seconds > 0.0 ? (frames - 1) / input_seconds : 0.0)
                   << " processed_fps=" << (seconds > 0.0 ? frames / seconds : 0.0)
                   << " mean_track_ms="

@@ -9,6 +9,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 #include <sys/socket.h>
@@ -133,6 +134,24 @@ void AppendPose(std::ostringstream& output, const slam::CameraPose& pose) {
     output << "]}";
 }
 
+void AppendMapPoints(std::ostringstream& output, const std::vector<slam::MapPoint>& points) {
+    output << '[';
+    for (std::size_t index = 0; index < points.size(); ++index) {
+        if (index != 0) output << ',';
+        const auto& point = points[index];
+        if (point.id > kMaxSafeJsonInteger) {
+            throw std::invalid_argument("map point ID exceeds JSON-safe integer maximum");
+        }
+        output << "{\"id\":" << point.id << ",\"position\":[";
+        for (std::size_t axis = 0; axis < point.position_metres.size(); ++axis) {
+            if (axis != 0) output << ',';
+            AppendNumber(output, point.position_metres[axis]);
+        }
+        output << "]}";
+    }
+    output << ']';
+}
+
 }  // namespace
 
 std::string SerializeHello(std::string_view session_id, std::string_view producer,
@@ -183,6 +202,48 @@ std::string SerializeTracking(std::string_view session_id,
         output << "null";
     }
     output << '}';
+    return output.str();
+}
+
+std::string SerializePointCloudDelta(std::string_view session_id, std::uint64_t frame_id,
+                                     camera::ImageFrame::Timestamp timestamp,
+                                     camera::ImageFrame::Timestamp timestamp_origin,
+                                     const slam::PointCloudDelta& delta) {
+    RequireText(session_id, "session_id");
+    if (frame_id > kMaxSafeJsonInteger) {
+        throw std::invalid_argument("frame ID exceeds JSON-safe integer maximum");
+    }
+    if (timestamp < timestamp_origin) {
+        throw std::invalid_argument("point-cloud timestamp precedes session origin");
+    }
+    std::unordered_set<std::uint64_t> point_ids;
+    const auto require_unique = [&point_ids](std::uint64_t id) {
+        if (!point_ids.insert(id).second) {
+            throw std::invalid_argument("map point ID occurs more than once in delta");
+        }
+    };
+    for (const auto& point : delta.add) require_unique(point.id);
+    for (const auto& point : delta.update) require_unique(point.id);
+    for (const auto id : delta.remove) require_unique(id);
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    output << "{\"type\":\"pointcloud_delta\",\"boundary_version\":1,\"session_id\":"
+           << JsonString(session_id) << ",\"frame_id\":" << frame_id
+           << ",\"timestamp_seconds\":";
+    AppendNumber(output, std::chrono::duration<double>(timestamp - timestamp_origin).count());
+    output << ",\"add\":";
+    AppendMapPoints(output, delta.add);
+    output << ",\"update\":";
+    AppendMapPoints(output, delta.update);
+    output << ",\"remove\":[";
+    for (std::size_t index = 0; index < delta.remove.size(); ++index) {
+        if (index != 0) output << ',';
+        if (delta.remove[index] > kMaxSafeJsonInteger) {
+            throw std::invalid_argument("removed map point ID exceeds JSON-safe integer maximum");
+        }
+        output << delta.remove[index];
+    }
+    output << "]}";
     return output.str();
 }
 
@@ -280,6 +341,30 @@ class Publisher::Impl final {
         return true;
     }
 
+    bool PublishPointCloud(std::uint64_t frame_id,
+                           camera::ImageFrame::Timestamp timestamp,
+                           const slam::PointCloudDelta& delta) {
+        if (fd_ < 0) return Fail("SLAM boundary is not connected");
+        if (ended_) return Fail("SLAM boundary session has ended");
+        if (last_pointcloud_frame_.has_value() && frame_id < *last_pointcloud_frame_) {
+            return Fail("point-cloud frame ID regressed");
+        }
+        if (last_pointcloud_timestamp_.has_value() && timestamp < *last_pointcloud_timestamp_) {
+            return Fail("point-cloud timestamp regressed");
+        }
+        std::string payload;
+        try {
+            payload = SerializePointCloudDelta(config_.session_id, frame_id, timestamp,
+                                               config_.timestamp_origin, delta);
+        } catch (const std::exception& error) {
+            return Fail(error.what());
+        }
+        if (!Send(payload)) return false;
+        last_pointcloud_frame_ = frame_id;
+        last_pointcloud_timestamp_ = timestamp;
+        return true;
+    }
+
     bool EndSession(std::string_view reason) {
         if (fd_ < 0) return Fail("SLAM boundary is not connected");
         if (ended_) return Fail("SLAM boundary session has already ended");
@@ -347,6 +432,8 @@ class Publisher::Impl final {
     bool ended_{false};
     std::optional<std::uint64_t> last_frame_;
     std::optional<camera::ImageFrame::Timestamp> last_timestamp_;
+    std::optional<std::uint64_t> last_pointcloud_frame_;
+    std::optional<camera::ImageFrame::Timestamp> last_pointcloud_timestamp_;
     std::string last_error_;
 };
 
@@ -356,6 +443,11 @@ Publisher::~Publisher() = default;
 bool Publisher::Connect() { return impl_->Connect(); }
 bool Publisher::PublishTracking(const slam::TrackingResult& result) {
     return impl_->PublishTracking(result);
+}
+bool Publisher::PublishPointCloud(std::uint64_t frame_id,
+                                  camera::ImageFrame::Timestamp timestamp,
+                                  const slam::PointCloudDelta& delta) {
+    return impl_->PublishPointCloud(frame_id, timestamp, delta);
 }
 bool Publisher::EndSession(std::string_view reason) { return impl_->EndSession(reason); }
 void Publisher::Close() noexcept { impl_->Close(); }

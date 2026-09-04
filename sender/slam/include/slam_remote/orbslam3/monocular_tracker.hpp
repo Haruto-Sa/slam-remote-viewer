@@ -5,6 +5,7 @@
 
 #include "slam_remote/camera/image_frame.hpp"
 #include "slam_remote/slam/pose.hpp"
+#include "slam_remote/slam/point_cloud_delta_reducer.hpp"
 
 namespace slam_remote::orbslam3 {
 
@@ -23,6 +24,7 @@ class MonocularTracker final {
     MonocularTracker& operator=(const MonocularTracker&) = delete;
 
     slam::TrackingResult Track(const camera::ImageFrame& frame);
+    std::vector<slam::MapPoint> ActiveMapPoints();
     void Reset();
     void Shutdown() noexcept;
 

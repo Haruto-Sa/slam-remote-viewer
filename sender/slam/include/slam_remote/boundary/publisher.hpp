@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "slam_remote/slam/pose.hpp"
+#include "slam_remote/slam/point_cloud_delta_reducer.hpp"
 
 namespace slam_remote::boundary {
 
@@ -36,6 +37,10 @@ std::string SerializeHello(std::string_view session_id, std::string_view produce
 std::string SerializeTracking(std::string_view session_id,
                               const slam::TrackingResult& result,
                               camera::ImageFrame::Timestamp timestamp_origin);
+std::string SerializePointCloudDelta(std::string_view session_id, std::uint64_t frame_id,
+                                     camera::ImageFrame::Timestamp timestamp,
+                                     camera::ImageFrame::Timestamp timestamp_origin,
+                                     const slam::PointCloudDelta& delta);
 std::string SerializeSessionEnd(std::string_view session_id, std::string_view reason);
 std::vector<std::uint8_t> FramePayload(std::string_view payload);
 
@@ -49,6 +54,8 @@ class Publisher final {
 
     bool Connect();
     bool PublishTracking(const slam::TrackingResult& result);
+    bool PublishPointCloud(std::uint64_t frame_id, camera::ImageFrame::Timestamp timestamp,
+                           const slam::PointCloudDelta& delta);
     bool EndSession(std::string_view reason = "shutdown");
     void Close() noexcept;
     [[nodiscard]] bool connected() const noexcept;

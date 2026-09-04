@@ -215,7 +215,7 @@ Start the validating Rust diagnostic first:
 
 ```bash
 cargo run --manifest-path sender/streamer/Cargo.toml \
-  --bin slam_boundary_dump -- --socket /private/tmp/slam-live.sock
+  --bin slam_boundary_dump -- --socket /private/tmp/slam-live.sock --allow-pointcloud
 ```
 
 Then append socket/session/camera/FPS arguments to the dataset replay command:
@@ -225,13 +225,19 @@ Then append socket/session/camera/FPS arguments to the dataset replay command:
   /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt \
   /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Examples/Monocular/TUM1.yaml \
   /private/tmp/slam-remote-viewer-orbslam3/datasets/rgbd_dataset_freiburg1_xyz \
-  /private/tmp/slam-live.sock session-id camera-id 30
+  /private/tmp/slam-live.sock session-id camera-id 30 30
 ```
 
-The verified local IPC run delivered one hello, all 798 tracking frames, and an
-orderly session end to the Rust adapter; 796 frames contained a valid pose. No
-image bytes, ORB-SLAM3 types, Protocol v1 JSON, or point-cloud data crossed this
-boundary.
+The final argument is the positive map-point snapshot period in frames; it
+defaults to 30 when omitted. The producer copies active ORB-SLAM3 map-point IDs
+and world coordinates into backend-independent values, reduces snapshots to
+bounded deltas, and publishes only non-empty deltas. The diagnostic reports
+tracking and point-cloud counts after an orderly session end. No image bytes,
+ORB-SLAM3 types, or Protocol v1 JSON cross this boundary.
+
+The 2026-09-03 M1 dataset check delivered all 798 tracking frames plus 26
+non-empty deltas (77,175 total add/update/remove operations) to the Rust adapter
+and completed with an orderly `session_end`.
 
 ## Point-cloud delta reducer
 
@@ -247,10 +253,10 @@ changing the last valid baseline. `Reset()` clears the baseline so the next
 snapshot is emitted as adds. ORB-SLAM3 extraction, boundary IPC, Protocol v1,
 and Unity remain outside this reducer.
 
-## Live camera to Protocol v1
+## Live camera to the streamer boundary
 
 `orbslam3_macos_camera_sender` connects the macOS camera source, ORB-SLAM3 pose
-adapter, and boundary publisher. For an MVP transport/display check, it accepts
+and map-point adapter, reducer, and boundary publisher. For an MVP transport/display check, it accepts
 the device ID and capture mode directly. The ORB settings file still controls
 SLAM intrinsics. A camera-specific calibration is recommended before evaluating
 pose accuracy, but is not required to exercise the live telemetry path.
@@ -270,13 +276,18 @@ cargo run --manifest-path sender/streamer/Cargo.toml \
 /private/tmp/slam-pose-adapter/orbslam3_macos_camera_sender \
   /private/tmp/slam-remote-viewer-orbslam3/src/ORB_SLAM3/Vocabulary/ORBvoc.txt \
   orb-camera.yaml DEVICE_ID 1280 720 30 /private/tmp/slam-live.sock \
-  live-session mac-camera 900
+  live-session mac-camera 900 30
 ```
 
-The finite frame limit makes the session repeatable; Ctrl-C also requests a
-clean stop. The final log reports captured frames, valid poses, camera drops,
-tracking-state transitions, observed input FPS, processed FPS, and mean
-ORB-SLAM3 tracking time. No image is sent or saved.
+The optional final value is the positive map-point snapshot period in frames
+(default 30). The finite frame limit makes the session repeatable; Ctrl-C also
+requests a clean stop. The final log reports captured frames, valid poses,
+point-cloud deltas, camera drops, tracking-state transitions, observed input
+FPS, processed FPS, and mean ORB-SLAM3 tracking time. No image is sent or saved.
+
+The Rust Sender currently publishes the live poses as Protocol v1 but does not
+yet convert boundary point-cloud deltas to `slam/v1/pointcloud`; keep using
+`packet_dump --pose-only` until that follow-up is implemented.
 
 Ctrl-C is cooperative while `TrackMonocular` is returning normally. If an
 upstream ORB-SLAM3 call does not return, a five-second watchdog terminates the
@@ -284,6 +295,12 @@ process with exit code 130 so the camera and process cannot remain stuck. That
 forced path cannot send `session_end`; the Rust Sender will report a producer
 disconnect, which distinguishes it from a clean shutdown. `Ctrl-D` is not a
 process-stop operation.
+
+The pinned ORB-SLAM3 revision normally only requests worker shutdown. The
+bootstrap patch series restores its worker-completion wait so process teardown
+cannot race Local Mapping or Loop Closing access to internal mutexes. A normal
+dataset or live completion must therefore exit without an exception after its
+success summary.
 
 For the MVP, verify settings precede any pose, the Receiver accepts the session,
 and no camera/SLAM process remains after shutdown. Coordinate accuracy,

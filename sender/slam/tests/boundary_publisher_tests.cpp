@@ -22,6 +22,7 @@ using slam_remote::boundary::CameraInfo;
 using slam_remote::boundary::Publisher;
 using slam_remote::boundary::PublisherConfig;
 using slam_remote::slam::CameraPose;
+using slam_remote::slam::PointCloudDelta;
 using slam_remote::slam::TrackingResult;
 using slam_remote::slam::TrackingState;
 
@@ -73,6 +74,26 @@ void TestSerializationAndValidation() {
           "session-relative timestamp must be serialized");
     Check(tracking.find("\"tracking_state\":\"tracking\"") != std::string::npos,
           "tracking state must be serialized");
+    const PointCloudDelta delta{{{1001, {0.1, 0.2, 1.4}}},
+                                {{1002, {0.2, 0.3, 1.5}}}, {1003}};
+    const auto pointcloud = slam_remote::boundary::SerializePointCloudDelta(
+        "fixture-session", 7, origin + std::chrono::milliseconds(250), origin, delta);
+    Check(pointcloud.find("\"type\":\"pointcloud_delta\"") != std::string::npos,
+          "point-cloud type must be serialized");
+    Check(pointcloud.find("\"add\":[{\"id\":1001") != std::string::npos,
+          "point-cloud add must be serialized");
+    Check(pointcloud.find("\"remove\":[1003]") != std::string::npos,
+          "point-cloud remove must be serialized");
+
+    bool duplicate_rejected = false;
+    try {
+        static_cast<void>(slam_remote::boundary::SerializePointCloudDelta(
+            "fixture-session", 7, origin, origin,
+            PointCloudDelta{{{1001, {0.0, 0.0, 0.0}}}, {}, {1001}}));
+    } catch (const std::invalid_argument&) {
+        duplicate_rejected = true;
+    }
+    Check(duplicate_rejected, "duplicate point IDs must be rejected before writing");
 
     const auto framed = slam_remote::boundary::FramePayload(tracking);
     Check(framed.size() == tracking.size() + 4, "frame must include four length bytes");
@@ -144,6 +165,7 @@ void TestCompleteSocketSession() {
             received.push_back(ReadFrame(connection));
             received.push_back(ReadFrame(connection));
             received.push_back(ReadFrame(connection));
+            received.push_back(ReadFrame(connection));
             close(connection);
         } catch (const std::exception& error) {
             server_error = error.what();
@@ -159,18 +181,24 @@ void TestCompleteSocketSession() {
         7, origin + std::chrono::milliseconds(250), TrackingState::kTracking,
         CameraPose{{1.0, 2.0, 3.0}, {0.0, 0.0, 0.0, 1.0}}};
     Check(publisher.PublishTracking(tracked), publisher.last_error());
+    Check(publisher.PublishPointCloud(
+              7, origin + std::chrono::milliseconds(250),
+              PointCloudDelta{{{1001, {0.1, 0.2, 1.4}}}, {}, {}}),
+          publisher.last_error());
     Check(publisher.EndSession(), publisher.last_error());
     server.join();
     close(listener);
     unlink(path.c_str());
 
     Check(server_error.empty(), server_error);
-    Check(received.size() == 3, "hello, tracking, and session_end must be sent");
+    Check(received.size() == 4, "hello, tracking, point-cloud, and session_end must be sent");
     Check(received[0].find("\"type\":\"hello\"") != std::string::npos,
           "hello must be first");
     Check(received[1].find("\"type\":\"tracking_frame\"") != std::string::npos,
           "tracking must be second");
-    Check(received[2].find("\"type\":\"session_end\"") != std::string::npos,
+    Check(received[2].find("\"type\":\"pointcloud_delta\"") != std::string::npos,
+          "point-cloud must be third");
+    Check(received[3].find("\"type\":\"session_end\"") != std::string::npos,
           "session_end must be last");
     Check(!publisher.connected(), "publisher must close after session_end");
 }

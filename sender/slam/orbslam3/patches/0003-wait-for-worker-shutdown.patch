@@ -1,0 +1,11 @@
+diff --git a/src/System.cc b/src/System.cc
+index 42d7c92..5d725b4 100644
+--- a/src/System.cc
++++ b/src/System.cc
+@@ -530,0 +531,6 @@ void System::Shutdown()
++    // Do not let process teardown race worker access to ORB-SLAM3 mutexes.
++    while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() ||
++          mpLoopCloser->isRunningGBA())
++    {
++        usleep(5000);
++    }

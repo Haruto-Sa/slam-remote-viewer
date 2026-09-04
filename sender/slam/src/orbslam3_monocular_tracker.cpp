@@ -9,6 +9,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "System.h"
+#include "MapPoint.h"
 #include "Tracking.h"
 
 namespace slam_remote::orbslam3 {
@@ -102,6 +103,24 @@ class MonocularTracker::Impl final {
         system_->ResetActiveMap();
     }
 
+    std::vector<slam::MapPoint> ActiveMapPoints() {
+        if (shut_down_) {
+            throw std::logic_error("cannot read map points after ORB-SLAM3 shutdown");
+        }
+        std::vector<slam::MapPoint> snapshot;
+        const auto points = system_->GetActiveMapPoints();
+        snapshot.reserve(points.size());
+        for (ORB_SLAM3::MapPoint* point : points) {
+            if (point == nullptr || point->isBad()) continue;
+            const Eigen::Vector3f position = point->GetWorldPos();
+            snapshot.push_back({point->mnId,
+                                {static_cast<double>(position.x()),
+                                 static_cast<double>(position.y()),
+                                 static_cast<double>(position.z())}});
+        }
+        return snapshot;
+    }
+
     void Shutdown() noexcept {
         if (!shut_down_ && system_) {
             system_->Shutdown();
@@ -121,6 +140,10 @@ MonocularTracker::~MonocularTracker() = default;
 
 slam::TrackingResult MonocularTracker::Track(const camera::ImageFrame& frame) {
     return impl_->Track(frame);
+}
+
+std::vector<slam::MapPoint> MonocularTracker::ActiveMapPoints() {
+    return impl_->ActiveMapPoints();
 }
 
 void MonocularTracker::Reset() { impl_->Reset(); }
