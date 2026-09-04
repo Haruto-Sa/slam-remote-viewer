@@ -92,3 +92,21 @@ cooperative path printed `Shutdown`, sent `session_end` with reason
 `interrupted`, stopped the Rust Sender, and returned in under 0.04 seconds. The
 five-second watchdog remains the bounded fallback for the observed class of
 upstream `TrackMonocular` stalls.
+
+## ORB-SLAM3 worker teardown regression
+
+A later TUM adapter replay delivered all tracking and point-cloud boundary
+events and printed its success summary, then aborted while a background worker
+attempted to lock an already-destroyed mutex. Inspection showed that the first
+worker-wait patch had landed inside a commented upstream shutdown block and was
+not executable. The corrected patch waits for worker completion and joins the
+Local Mapping, Loop Closing, global bundle adjustment, and optional Viewer
+thread handles. Use `tools/repeat-test-orbslam3-shutdown.sh` for ten consecutive
+exit-code-zero replays before accepting the fix.
+
+The corrected patch passed ten consecutive Apple Silicon TUM replays on
+2026-09-05. Every run processed 798 frames, produced 794 to 796 valid poses,
+printed the success summary, and returned exit code zero. A separate live-camera
+run received Ctrl-C after 722 frames, immediately printed `Shutdown`, sent an
+orderly `session_end` with reason `interrupted`, and left no producer or boundary
+diagnostic process running.
