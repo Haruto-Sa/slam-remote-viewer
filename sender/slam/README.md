@@ -296,6 +296,12 @@ forced path cannot send `session_end`; the Rust Sender will report a producer
 disconnect, which distinguishes it from a clean shutdown. `Ctrl-D` is not a
 process-stop operation.
 
+The pinned ORB-SLAM3 revision normally only requests worker shutdown. The
+bootstrap patch series restores its worker-completion wait so process teardown
+cannot race Local Mapping or Loop Closing access to internal mutexes. A normal
+dataset or live completion must therefore exit without an exception after its
+success summary.
+
 For the MVP, verify settings precede any pose, the Receiver accepts the session,
 and no camera/SLAM process remains after shutdown. Coordinate accuracy,
 calibration RMS, controlled-axis motion, and quantitative performance thresholds
