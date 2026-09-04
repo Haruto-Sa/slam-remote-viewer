@@ -285,9 +285,9 @@ requests a clean stop. The final log reports captured frames, valid poses,
 point-cloud deltas, camera drops, tracking-state transitions, observed input
 FPS, processed FPS, and mean ORB-SLAM3 tracking time. No image is sent or saved.
 
-The Rust Sender currently publishes the live poses as Protocol v1 but does not
-yet convert boundary point-cloud deltas to `slam/v1/pointcloud`; keep using
-`packet_dump --pose-only` until that follow-up is implemented.
+The Rust Sender publishes validated live poses and point-cloud deltas as
+Protocol v1. Run `packet_dump` without `--pose-only` to require settings, pose,
+and point-cloud topics during this check.
 
 Ctrl-C is cooperative while `TrackMonocular` is returning normally. If an
 upstream ORB-SLAM3 call does not return, a five-second watchdog terminates the
