@@ -319,8 +319,9 @@ fn run_live(cli: Cli) -> Result<(), Box<dyn Error>> {
         .map_err(|_| "live SLAM interrupt lock poisoned")?
         .take();
     println!(
-        "live sender stopped: poses={}, skipped_without_pose={}",
+        "live sender stopped: poses={}, pointclouds={}, skipped_without_pose={}",
         live_publisher.poses_published(),
+        live_publisher.pointclouds_published(),
         live_publisher.skipped_without_pose()
     );
     Ok(())

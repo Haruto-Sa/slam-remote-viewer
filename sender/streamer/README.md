@@ -58,7 +58,7 @@ listener removes only the socket file instance it created.
 Tests use temporary local sockets and require no camera or ORB-SLAM3
 installation.
 
-## Publish live SLAM poses
+## Publish live SLAM telemetry
 
 Start the Rust Sender before the C++ producer. It owns the Unix socket, validates
 the boundary stream, and is the only process that creates Protocol v1 JSON:
@@ -78,8 +78,11 @@ metadata. The Sender publishes settings immediately and every five seconds,
 then maps each valid `Twc` pose to `slam/v1/pose` while preserving frame ID,
 timestamp, and tracking state. Tracking frames without coordinates are not
 published because Protocol v1 pose messages require a position and orientation;
-no stale or fabricated pose is substituted. Point-cloud boundary events are
-accepted but intentionally not published by Issue #28.
+no stale or fabricated pose is substituted. It maps each validated boundary
+point-cloud delta to `slam/v1/pointcloud`, preserves its timestamp and point
+operations, and assigns a point-cloud-topic sequence starting at zero. Boundary
+frame IDs remain ordering metadata at the process boundary because Protocol v1
+point-cloud messages do not define a separate frame-ID field.
 
 Ctrl-C closes an active boundary read, drops the ZeroMQ publisher with zero
 linger, and removes the Unix socket created by this process. A malformed frame,
@@ -196,9 +199,10 @@ after receiving settings, pose, and point-cloud messages. It reports a timeout
 with a hint if no telemetry arrives within five minutes. This allows time for
 ORB-SLAM3 vocabulary loading during a live-path check.
 
-For the live Sender, which does not yet publish boundary point-cloud deltas as
-Protocol v1, append `--pose-only` after the endpoint. The diagnostic then
-succeeds after receiving canonical settings and one pose:
+The live Sender publishes all three topics, so do not append `--pose-only` when
+checking a producer that emits point-cloud deltas. For an older or deliberately
+pose-only producer, that option still makes the diagnostic require only settings
+and pose:
 
 ```bash
 cargo run \
@@ -211,7 +215,7 @@ cargo run \
 
 - PUB/SUB is lossy and v1 has no replay or point-cloud snapshot.
 - Mock point cloud is a fixed two-point fixture.
-- Live Protocol v1 point-cloud publication and reconnecting a second producer
-  remain outside the current live session contract.
+- Reconnecting a second producer remains outside the current live session
+  contract.
 - Settings are repeated so a late subscriber can recover the live session
   contract. Mock point-cloud messages are also repeated.

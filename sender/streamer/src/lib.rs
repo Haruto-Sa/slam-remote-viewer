@@ -7,6 +7,7 @@ pub mod live_slam_input;
 pub mod pose_source;
 pub mod slam_boundary;
 
+use live_slam_input::LivePointCloudDelta;
 use pose_source::{SlamPose, SlamTrackingState};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -193,6 +194,32 @@ pub struct PointCloudDeltaMessage {
 }
 
 impl PointCloudDeltaMessage {
+    pub fn from_live_delta(
+        session: impl Into<String>,
+        seq: u64,
+        delta: LivePointCloudDelta,
+    ) -> Self {
+        // Boundary validation uses the source frame ID for ordering. Protocol v1
+        // point-cloud messages intentionally expose only their topic sequence.
+        let convert_point = |point: live_slam_input::SlamMapPoint| {
+            MapPoint(
+                point.id,
+                point.position[0],
+                point.position[1],
+                point.position[2],
+            )
+        };
+        Self {
+            v: PROTOCOL_VERSION,
+            session: session.into(),
+            seq,
+            t: delta.timestamp_seconds,
+            add: delta.add.into_iter().map(convert_point).collect(),
+            update: delta.update.into_iter().map(convert_point).collect(),
+            remove: delta.remove,
+        }
+    }
+
     pub fn fixture(session: impl Into<String>, seq: u64, time_sec: f64) -> Self {
         Self {
             v: PROTOCOL_VERSION,
@@ -326,6 +353,35 @@ mod tests {
         });
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn adapts_live_pointcloud_delta_to_protocol_v1() {
+        let message = PointCloudDeltaMessage::from_live_delta(
+            "live-session",
+            3,
+            LivePointCloudDelta {
+                frame_id: 42,
+                timestamp_seconds: 1.25,
+                add: vec![live_slam_input::SlamMapPoint {
+                    id: 1001,
+                    position: [0.1, 0.2, 1.4],
+                }],
+                update: vec![live_slam_input::SlamMapPoint {
+                    id: 1002,
+                    position: [0.2, 0.3, 1.5],
+                }],
+                remove: vec![1003],
+            },
+        );
+
+        assert_eq!(message.v, PROTOCOL_VERSION);
+        assert_eq!(message.session, "live-session");
+        assert_eq!(message.seq, 3);
+        assert_eq!(message.t, 1.25);
+        assert_eq!(message.add, vec![MapPoint(1001, 0.1, 0.2, 1.4)]);
+        assert_eq!(message.update, vec![MapPoint(1002, 0.2, 0.3, 1.5)]);
+        assert_eq!(message.remove, vec![1003]);
     }
 
     #[test]
