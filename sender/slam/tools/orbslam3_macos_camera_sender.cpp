@@ -12,6 +12,7 @@
 #include "slam_remote/boundary/publisher.hpp"
 #include "slam_remote/camera/macos_camera_source.hpp"
 #include "slam_remote/orbslam3/monocular_tracker.hpp"
+#include "slam_remote/slam/frame_limit.hpp"
 #include "slam_remote/slam/point_cloud_delta_reducer.hpp"
 
 namespace {
@@ -72,14 +73,15 @@ int main(int argc, char** argv) {
     if (argc != 11 && argc != 12) {
         std::cerr << "usage: orbslam3_macos_camera_sender VOCABULARY SETTINGS DEVICE_ID WIDTH "
                      "HEIGHT FPS SOCKET SESSION CAMERA_ID FRAME_LIMIT "
-                     "[POINTCLOUD_PERIOD_FRAMES]\n";
+                     "[POINTCLOUD_PERIOD_FRAMES]\n"
+                     "       FRAME_LIMIT=0 runs until Ctrl-C\n";
         return EXIT_FAILURE;
     }
     try {
         const auto width = Positive(argv[4], "WIDTH");
         const auto height = Positive(argv[5], "HEIGHT");
         const auto fps = Positive(argv[6], "FPS");
-        const auto frame_limit = Positive(argv[10], "FRAME_LIMIT");
+        const auto frame_limit = slam_remote::slam::FrameLimit::Parse(argv[10]);
         const auto pointcloud_period =
             argc == 12 ? Positive(argv[11], "POINTCLOUD_PERIOD_FRAMES") : 30;
         slam_remote::camera::CameraCalibration calibration{
@@ -117,7 +119,7 @@ int main(int argc, char** argv) {
         auto last_timestamp = first_timestamp;
         auto previous_state = slam_remote::slam::TrackingState::kInitializing;
         const auto began = std::chrono::steady_clock::now();
-        while (running != 0 && frames < frame_limit) {
+        while (running != 0 && !frame_limit.reached(frames)) {
             const auto tracking_started = std::chrono::steady_clock::now();
             const auto result = tracker.Track(frame);
             tracking_seconds += std::chrono::duration<double>(
@@ -140,7 +142,7 @@ int main(int argc, char** argv) {
                 }
             }
             ++frames;
-            if (frames >= frame_limit) break;
+            if (frame_limit.reached(frames)) break;
             const auto next = source.NextFrame(2s);
             if (next.status == slam_remote::camera::FrameStatus::kTimeout) continue;
             if (!next.IsValid() || !next.frame) break;
