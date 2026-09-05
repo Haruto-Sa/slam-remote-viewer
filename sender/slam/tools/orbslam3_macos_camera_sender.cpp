@@ -3,22 +3,47 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <limits>
+#include <pthread.h>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 
 #include "slam_remote/boundary/publisher.hpp"
 #include "slam_remote/camera/macos_camera_source.hpp"
+#include "slam_remote/diagnostics/diagnostics_option.hpp"
+#include "slam_remote/diagnostics/live_diagnostics.hpp"
+#include "slam_remote/diagnostics/pangolin_live_diagnostics.hpp"
 #include "slam_remote/orbslam3/monocular_tracker.hpp"
 #include "slam_remote/slam/frame_limit.hpp"
 #include "slam_remote/slam/point_cloud_delta_reducer.hpp"
+
+int RunSession(int argc, char** argv,
+               slam_remote::diagnostics::LiveDiagnosticsStore* diagnostics);
 
 namespace {
 volatile std::sig_atomic_t running = 1;
 void HandleSignal(int) { running = 0; }
 constexpr auto kInterruptGracePeriod = std::chrono::seconds(5);
+constexpr std::size_t kSlamWorkerStackSize = 8 * 1024 * 1024;
+
+struct SessionThreadContext final {
+    int argc;
+    char** argv;
+    slam_remote::diagnostics::LiveDiagnosticsStore* diagnostics;
+    int result{EXIT_FAILURE};
+};
+
+void* RunSessionThread(void* opaque_context) {
+    auto& context = *static_cast<SessionThreadContext*>(opaque_context);
+    context.result = RunSession(context.argc, context.argv, context.diagnostics);
+    context.diagnostics->MarkFinished(context.result == EXIT_SUCCESS ? std::string{}
+                                                                      : "producer failed");
+    return nullptr;
+}
 
 class InterruptWatchdog final {
    public:
@@ -68,7 +93,8 @@ std::uint32_t Positive(const char* value, const char* name) {
 }
 }  // namespace
 
-int main(int argc, char** argv) {
+int RunSession(int argc, char** argv,
+               slam_remote::diagnostics::LiveDiagnosticsStore* diagnostics) {
     using namespace std::chrono_literals;
     if (argc != 11 && argc != 12) {
         std::cerr << "usage: orbslam3_macos_camera_sender VOCABULARY SETTINGS DEVICE_ID WIDTH "
@@ -133,7 +159,11 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(publisher.last_error());
             }
             if (frames % pointcloud_period == 0) {
-                const auto delta = pointcloud_reducer.Reduce(tracker.ActiveMapPoints());
+                auto active_points = tracker.ActiveMapPoints();
+                const auto delta = pointcloud_reducer.Reduce(active_points);
+                if (diagnostics != nullptr) {
+                    diagnostics->UpdatePointCloud(std::move(active_points));
+                }
                 if (delta.operation_count() > 0) {
                     if (!publisher.PublishPointCloud(result.frame_id, result.timestamp, delta)) {
                         throw std::runtime_error(publisher.last_error());
@@ -142,6 +172,23 @@ int main(int argc, char** argv) {
                 }
             }
             ++frames;
+            if (diagnostics != nullptr) {
+                const auto elapsed_seconds = std::chrono::duration<double>(
+                                                 std::chrono::steady_clock::now() - began)
+                                                 .count();
+                const auto input_seconds =
+                    std::chrono::duration<double>(last_timestamp - first_timestamp).count();
+                diagnostics->UpdateFrame(
+                    frame,
+                    {previous_state,
+                     frames,
+                     poses,
+                     pointcloud_deltas,
+                     source.dropped_frames(),
+                     input_seconds > 0.0 ? (frames - 1) / input_seconds : 0.0,
+                     elapsed_seconds > 0.0 ? frames / elapsed_seconds : 0.0,
+                     frames > 0 ? tracking_seconds * 1000.0 / frames : 0.0});
+            }
             if (frame_limit.reached(frames)) break;
             const auto next = source.NextFrame(2s);
             if (next.status == slam_remote::camera::FrameStatus::kTimeout) continue;
@@ -171,4 +218,54 @@ int main(int argc, char** argv) {
         std::cerr << "live SLAM session failed: " << error.what() << '\n';
         return EXIT_FAILURE;
     }
+}
+
+int main(int argc, char** argv) {
+    const bool diagnostics_enabled =
+        slam_remote::diagnostics::ConsumeDiagnosticsOption(argc, argv);
+    if (!diagnostics_enabled) return RunSession(argc, argv, nullptr);
+
+    slam_remote::diagnostics::LiveDiagnosticsStore diagnostics;
+    SessionThreadContext session_context{argc, argv, &diagnostics};
+    pthread_attr_t worker_attributes;
+    auto thread_error = pthread_attr_init(&worker_attributes);
+    if (thread_error != 0) {
+        std::cerr << "live diagnostics failed: "
+                  << std::system_category().message(thread_error) << '\n';
+        return EXIT_FAILURE;
+    }
+    thread_error = pthread_attr_setstacksize(&worker_attributes, kSlamWorkerStackSize);
+    if (thread_error != 0) {
+        pthread_attr_destroy(&worker_attributes);
+        std::cerr << "live diagnostics failed: cannot configure SLAM worker stack: "
+                  << std::system_category().message(thread_error) << '\n';
+        return EXIT_FAILURE;
+    }
+    pthread_t worker;
+    thread_error =
+        pthread_create(&worker, &worker_attributes, RunSessionThread, &session_context);
+    pthread_attr_destroy(&worker_attributes);
+    if (thread_error != 0) {
+        std::cerr << "live diagnostics failed: cannot start SLAM worker: "
+                  << std::system_category().message(thread_error) << '\n';
+        return EXIT_FAILURE;
+    }
+
+    bool diagnostics_failed = false;
+    try {
+        slam_remote::diagnostics::RunPangolinLiveDiagnostics(diagnostics, [&] {
+            running = 0;
+        });
+    } catch (const std::exception& error) {
+        running = 0;
+        std::cerr << "live diagnostics failed: " << error.what() << '\n';
+        diagnostics_failed = true;
+    }
+    thread_error = pthread_join(worker, nullptr);
+    if (thread_error != 0) {
+        std::cerr << "live diagnostics failed: cannot join SLAM worker: "
+                  << std::system_category().message(thread_error) << '\n';
+        return EXIT_FAILURE;
+    }
+    return diagnostics_failed ? EXIT_FAILURE : session_context.result;
 }
