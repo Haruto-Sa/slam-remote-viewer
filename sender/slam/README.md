@@ -279,11 +279,13 @@ cargo run --manifest-path sender/streamer/Cargo.toml \
   live-session mac-camera 900 30
 ```
 
-The optional final value is the positive map-point snapshot period in frames
-(default 30). The finite frame limit makes the session repeatable; Ctrl-C also
-requests a clean stop. The final log reports captured frames, valid poses,
-point-cloud deltas, camera drops, tracking-state transitions, observed input
-FPS, processed FPS, and mean ORB-SLAM3 tracking time. No image is sent or saved.
+`FRAME_LIMIT` accepts a positive uint32 for a repeatable finite session. Set it
+to `0` for continuous operation until Ctrl-C (or a future application Stop
+control). The optional final value is the positive map-point snapshot period in
+frames (default 30); zero is not valid for that period. The final log reports
+captured frames, valid poses, point-cloud deltas, camera drops, tracking-state
+transitions, observed input FPS, processed FPS, and mean ORB-SLAM3 tracking
+time. No image is sent or saved.
 
 The Rust Sender publishes validated live poses and point-cloud deltas as
 Protocol v1. `packet_dump` waits up to five minutes for all three topics. A

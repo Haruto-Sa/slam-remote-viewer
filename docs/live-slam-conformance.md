@@ -143,6 +143,8 @@ topics during its five-minute window. In particular, starting it without a live
 producer and waiting past that window is expected to time out and does not by
 itself indicate a broken Sender or network path.
 
-The remaining work is post-MVP operational quality: unlimited run-until-stop,
-sender-side diagnostics and controls, optional camera calibration, and tracking
-quality improvements. None changes the completed Protocol v1 E2E result.
+For operational sessions, pass `FRAME_LIMIT=0` to keep the camera producer
+running until Ctrl-C. Positive values retain finite, repeatable runs. The
+remaining work is post-MVP operational quality: sender-side diagnostics and
+controls, optional camera calibration, and tracking quality improvements. None
+changes the completed Protocol v1 E2E result.
