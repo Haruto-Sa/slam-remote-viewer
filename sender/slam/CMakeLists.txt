@@ -39,6 +39,13 @@ add_library(slam_point_cloud_delta_reducer src/point_cloud_delta_reducer.cpp)
 add_library(slam::point_cloud_delta_reducer ALIAS slam_point_cloud_delta_reducer)
 target_link_libraries(slam_point_cloud_delta_reducer PUBLIC slam::camera_contracts)
 
+add_library(slam_live_diagnostics src/live_diagnostics.cpp)
+add_library(slam::live_diagnostics ALIAS slam_live_diagnostics)
+target_link_libraries(
+    slam_live_diagnostics
+    PUBLIC slam::camera_contracts slam::point_cloud_delta_reducer slam::pose_model
+)
+
 add_library(slam_boundary_publisher src/boundary_publisher.cpp)
 add_library(slam::boundary_publisher ALIAS slam_boundary_publisher)
 target_link_libraries(
@@ -114,6 +121,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_pose_model PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(slam_live_diagnostics PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(
         slam_point_cloud_delta_reducer PRIVATE -Wall -Wextra -Wpedantic -Werror
     )
@@ -148,6 +156,21 @@ if(APPLE)
     )
 
     if(SLAM_ENABLE_ORB_SLAM3)
+        add_library(
+            slam_pangolin_live_diagnostics src/pangolin_live_diagnostics.cpp
+        )
+        add_library(
+            slam::pangolin_live_diagnostics ALIAS slam_pangolin_live_diagnostics
+        )
+        target_link_libraries(
+            slam_pangolin_live_diagnostics
+            PUBLIC slam::live_diagnostics
+            PRIVATE pango_core pango_display GLEW::GLEW
+        )
+        target_compile_options(
+            slam_pangolin_live_diagnostics PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+
         add_executable(
             orbslam3_macos_camera_sender tools/orbslam3_macos_camera_sender.cpp
         )
@@ -157,6 +180,7 @@ if(APPLE)
                 slam::macos_camera_source
                 slam::orbslam3_pose_adapter
                 slam::boundary_publisher
+                slam::pangolin_live_diagnostics
                 opencv_imgproc
         )
         target_compile_options(
@@ -241,4 +265,11 @@ if(SLAM_BUILD_TESTS)
         target_compile_options(frame_limit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME frame_limit_tests COMMAND frame_limit_tests)
+
+    add_executable(live_diagnostics_tests tests/live_diagnostics_tests.cpp)
+    target_link_libraries(live_diagnostics_tests PRIVATE slam::live_diagnostics)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(live_diagnostics_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME live_diagnostics_tests COMMAND live_diagnostics_tests)
 endif()
