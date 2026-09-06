@@ -280,12 +280,32 @@ cargo run --manifest-path sender/streamer/Cargo.toml \
 ```
 
 `FRAME_LIMIT` accepts a positive uint32 for a repeatable finite session. Set it
-to `0` for continuous operation until Ctrl-C (or a future application Stop
-control). The optional final value is the positive map-point snapshot period in
-frames (default 30); zero is not valid for that period. The final log reports
+to `0` for continuous operation until Ctrl-C. The optional final value is the
+positive map-point snapshot period in frames (default 30); zero is not valid
+for that period. The final log reports
 captured frames, valid poses, point-cloud deltas, camera drops, tracking-state
 transitions, observed input FPS, processed FPS, and mean ORB-SLAM3 tracking
 time. No image is sent or saved.
+
+Append `--diagnostics` to open an optional local Pangolin window:
+
+```bash
+/private/tmp/slam-pose-adapter/orbslam3_macos_camera_sender \
+  VOCABULARY SETTINGS DEVICE_ID 640 480 30 /private/tmp/slam-live.sock \
+  live-session mac-camera 0 30 --diagnostics
+```
+
+The window shows the latest camera frame, active map points, tracking state,
+frame/pose/point-cloud/drop counters, FPS, and mean tracking time. Its Stop
+button and window close request the same cooperative shutdown as Ctrl-C. The
+Pangolin event loop stays on the macOS main thread while camera and SLAM work
+run on one producer thread. The producer uses an explicit 8 MiB stack, matching
+the capacity ORB-SLAM3 previously received on the process main thread; the
+smaller macOS default worker stack is insufficient during monocular map
+initialization. Preview data is latest-only: it does not create an
+unbounded frame or point-cloud queue. Camera images remain local to this
+process and are neither saved nor sent over the boundary or ZeroMQ. Without
+`--diagnostics`, the existing headless behavior is unchanged.
 
 The Rust Sender publishes validated live poses and point-cloud deltas as
 Protocol v1. `packet_dump` waits up to five minutes for all three topics. A
