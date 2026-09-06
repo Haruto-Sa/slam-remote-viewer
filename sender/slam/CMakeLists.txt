@@ -160,12 +160,32 @@ if(APPLE)
             "SHELL:-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/macos/CameraInfo.plist"
     )
 
-    add_executable(macos_live_sender_control tools/macos_live_sender_control.mm)
+    add_executable(
+        macos_live_sender_control MACOSX_BUNDLE tools/macos_live_sender_control.mm
+    )
     target_link_libraries(
-        macos_live_sender_control PRIVATE slam::macos_sender_control "-framework AppKit"
+        macos_live_sender_control
+        PRIVATE
+            slam::macos_sender_control
+            "-framework AppKit"
+            "-framework AVFoundation"
     )
     target_compile_options(
         macos_live_sender_control PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic -Werror
+    )
+    set_target_properties(
+        macos_live_sender_control
+        PROPERTIES
+            OUTPUT_NAME "SLAM Live Sender"
+            MACOSX_BUNDLE_INFO_PLIST
+                "${CMAKE_CURRENT_SOURCE_DIR}/macos/LiveSenderInfo.plist.in"
+            MACOSX_BUNDLE_BUNDLE_NAME "SLAM Live Sender"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.haruto-sa.slam-remote-viewer.sender"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_LONG_VERSION_STRING "SLAM Live Sender ${PROJECT_VERSION}"
+            MACOSX_BUNDLE_INFO_STRING "SLAM Live Sender ${PROJECT_VERSION}"
+            MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 slam-remote-viewer contributors"
     )
 
     if(SLAM_ENABLE_ORB_SLAM3)
@@ -211,6 +231,14 @@ if(APPLE)
         target_link_libraries(macos_camera_source_tests PRIVATE slam::macos_camera_source)
         target_compile_options(macos_camera_source_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
         add_test(NAME macos_camera_source_tests COMMAND macos_camera_source_tests)
+        add_test(
+            NAME macos_sender_bundle_metadata
+            COMMAND
+                ${CMAKE_COMMAND}
+                "-DPLIST=$<TARGET_BUNDLE_DIR:macos_live_sender_control>/Contents/Info.plist"
+                "-DEXECUTABLE=$<TARGET_FILE:macos_live_sender_control>"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_macos_bundle.cmake"
+        )
     endif()
 endif()
 

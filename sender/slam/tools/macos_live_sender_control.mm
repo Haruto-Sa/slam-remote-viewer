@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <AVFoundation/AVFoundation.h>
 
 #include <cstdint>
 #include <limits>
@@ -22,8 +23,8 @@ NSString* const kFieldLabels[] = {@"Launcher",   @"Rust streamer", @"C++ produce
                                   @"Settings",   @"Camera device", @"Width",        @"Height",
                                   @"FPS",        @"SLAM socket",   @"PUB endpoint", @"Session",
                                   @"Camera ID",  @"Point period"};
-NSString* const kDefaults[] = {@"sender/streamer/target/debug/macos_live_sender",
-                               @"sender/streamer/target/debug/slam-mock-sender",
+NSString* const kDefaults[] = {@"",
+                               @"",
                                @"/private/tmp/slam-pose-adapter/orbslam3_macos_camera_sender",
                                @"", @"", @"", @"640", @"480", @"30",
                                @"/private/tmp/slam-live.sock", @"tcp://*:5555",
@@ -31,6 +32,11 @@ NSString* const kDefaults[] = {@"sender/streamer/target/debug/macos_live_sender"
 constexpr std::size_t kFieldCount = sizeof(kFieldKeys) / sizeof(kFieldKeys[0]);
 
 std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.UTF8String : ""; }
+
+std::string NormalizedPath(NSString* value) {
+    NSString* trimmed = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return Utf8(trimmed.stringByExpandingTildeInPath.stringByStandardizingPath);
+}
 
 }  // namespace
 
@@ -46,6 +52,7 @@ std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.U
     NSTask* _task;
     SenderControlModel _model;
     BOOL _closeWhenStopped;
+    BOOL _terminateWhenStopped;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
@@ -108,11 +115,11 @@ std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.U
 }
 
 - (BOOL)readConfig:(SenderLaunchConfig*)config {
-    config->launcher_path = Utf8([self value:@"launcher"]);
-    config->streamer_path = Utf8([self value:@"streamer"]);
-    config->producer_path = Utf8([self value:@"producer"]);
-    config->vocabulary_path = Utf8([self value:@"vocabulary"]);
-    config->settings_path = Utf8([self value:@"settings"]);
+    config->launcher_path = NormalizedPath([self value:@"launcher"]);
+    config->streamer_path = NormalizedPath([self value:@"streamer"]);
+    config->producer_path = NormalizedPath([self value:@"producer"]);
+    config->vocabulary_path = NormalizedPath([self value:@"vocabulary"]);
+    config->settings_path = NormalizedPath([self value:@"settings"]);
     config->device_id = Utf8([self value:@"device"]);
     config->socket_path = Utf8([self value:@"socket"]);
     config->endpoint = Utf8([self value:@"endpoint"]);
@@ -133,6 +140,33 @@ std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.U
 
 - (void)start:(id)sender {
     (void)sender;
+    const AVAuthorizationStatus cameraAuthorization =
+        [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+    if (cameraAuthorization == AVAuthorizationStatusNotDetermined) {
+        _status.stringValue = @"Waiting for camera permission";
+        _start.enabled = NO;
+        __weak SenderControlDelegate* weakSelf = self;
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
+                                 completionHandler:^(BOOL granted) {
+                                   dispatch_async(dispatch_get_main_queue(), ^{
+                                     SenderControlDelegate* strongSelf = weakSelf;
+                                     if (strongSelf == nil) return;
+                                     if (granted) {
+                                         [strongSelf start:nil];
+                                     } else {
+                                         strongSelf->_status.stringValue =
+                                             @"Camera access denied; enable it in System Settings";
+                                         [strongSelf refreshControls];
+                                     }
+                                   });
+                                 }];
+        return;
+    }
+    if (cameraAuthorization == AVAuthorizationStatusDenied ||
+        cameraAuthorization == AVAuthorizationStatusRestricted) {
+        _status.stringValue = @"Camera access denied; enable it in System Settings";
+        return;
+    }
     SenderLaunchConfig config;
     if (![self readConfig:&config]) return;
     std::string error;
@@ -143,7 +177,8 @@ std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.U
     }
     [self saveFields];
     _task = [[NSTask alloc] init];
-    _task.executableURL = [NSURL fileURLWithPath:[self value:@"launcher"]];
+    _task.executableURL =
+        [NSURL fileURLWithPath:[NSString stringWithUTF8String:config.launcher_path.c_str()]];
     NSMutableArray<NSString*>* arguments = [NSMutableArray array];
     for (const auto& argument : BuildLauncherArguments(config)) {
         [arguments addObject:[NSString stringWithUTF8String:argument.c_str()]];
@@ -185,6 +220,10 @@ std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.U
     _status.stringValue = status == 0
                               ? @"Stopped cleanly (exit 0)"
                               : [NSString stringWithFormat:@"Failed (exit %d)", status];
+    if (_terminateWhenStopped) {
+        [NSApp replyToApplicationShouldTerminate:YES];
+        return;
+    }
     if (_closeWhenStopped) [_window close];
 }
 
@@ -207,6 +246,16 @@ std::string Utf8(NSString* value) { return value.UTF8String != nullptr ? value.U
 - (void)windowWillClose:(NSNotification*)notification {
     (void)notification;
     [NSApp terminate:nil];
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender {
+    (void)sender;
+    if (_model.CanStop()) {
+        _terminateWhenStopped = YES;
+        [self stop:nil];
+        return NSTerminateLater;
+    }
+    return NSTerminateNow;
 }
 
 @end
