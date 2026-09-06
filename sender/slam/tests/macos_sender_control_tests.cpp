@@ -9,6 +9,7 @@ namespace {
 
 using slam_remote::launcher::BuildLauncherArguments;
 using slam_remote::launcher::ControlState;
+using slam_remote::launcher::FindSavedCameraDevice;
 using slam_remote::launcher::SenderControlModel;
 using slam_remote::launcher::SenderLaunchConfig;
 
@@ -66,6 +67,16 @@ void TestValidation() {
           "Finder launches must reject working-directory-dependent paths");
 }
 
+void TestSavedCameraLookup() {
+    const std::vector<std::string> devices{"built-in", "continuity-camera"};
+    Check(FindSavedCameraDevice(devices, "continuity-camera") == 1,
+          "a discovered saved camera must retain its stable ID");
+    Check(!FindSavedCameraDevice(devices, "disconnected-camera").has_value(),
+          "a stale saved camera ID must be detectable");
+    Check(!FindSavedCameraDevice({}, "built-in").has_value(),
+          "an empty discovery result must not select a camera");
+}
+
 }  // namespace
 
 int main() {
@@ -73,6 +84,7 @@ int main() {
         TestArguments();
         TestStateTransitions();
         TestValidation();
+        TestSavedCameraLookup();
     } catch (const std::exception& error) {
         std::cerr << "macOS sender control test failed: " << error.what() << '\n';
         return EXIT_FAILURE;

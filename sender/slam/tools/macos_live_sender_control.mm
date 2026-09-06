@@ -12,6 +12,7 @@ namespace {
 
 using slam_remote::launcher::BuildLauncherArguments;
 using slam_remote::launcher::ControlStateName;
+using slam_remote::launcher::FindSavedCameraDevice;
 using slam_remote::launcher::SenderControlModel;
 using slam_remote::launcher::SenderLaunchConfig;
 
@@ -72,12 +73,30 @@ std::string NormalizedPath(NSString* value) {
     for (std::size_t index = 0; index < kFieldCount; ++index) {
         NSTextField* label = [NSTextField labelWithString:kFieldLabels[index]];
         label.frame = NSMakeRect(20, y, 125, 24);
-        NSTextField* field = [[NSTextField alloc] initWithFrame:NSMakeRect(150, y, 645, 24)];
+        const BOOL hasPicker = index <= 5;
+        NSTextField* field = [[NSTextField alloc]
+            initWithFrame:NSMakeRect(150, y, hasPicker ? 555 : 645, 24)];
         NSString* saved = [defaults stringForKey:kFieldKeys[index]];
         field.stringValue = saved != nil ? saved : kDefaults[index];
         [content addSubview:label];
         [content addSubview:field];
         _fields[kFieldKeys[index]] = field;
+        if (index < 5) {
+            NSButton* choose = [NSButton buttonWithTitle:@"Choose…"
+                                                   target:self
+                                                   action:@selector(chooseFile:)];
+            choose.frame = NSMakeRect(715, y - 2, 80, 28);
+            choose.bezelStyle = NSBezelStyleRounded;
+            choose.tag = static_cast<NSInteger>(index);
+            [content addSubview:choose];
+        } else if (index == 5) {
+            NSButton* cameras = [NSButton buttonWithTitle:@"Cameras…"
+                                                    target:self
+                                                    action:@selector(refreshCameras:)];
+            cameras.frame = NSMakeRect(715, y - 2, 80, 28);
+            cameras.bezelStyle = NSBezelStyleRounded;
+            [content addSubview:cameras];
+        }
         y -= 40;
     }
 
@@ -97,6 +116,105 @@ std::string NormalizedPath(NSString* value) {
     [_window makeKeyAndOrderFront:nil];
     [_window makeFirstResponder:_fields[@"vocabulary"]];
     [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)chooseFile:(NSButton*)sender {
+    const NSInteger index = sender.tag;
+    if (index < 0 || index >= 5) return;
+    NSString* key = kFieldKeys[index];
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = NO;
+    NSString* current = [self value:key];
+    if (current.length > 0) {
+        NSString* normalized = [NSString stringWithUTF8String:NormalizedPath(current).c_str()];
+        panel.directoryURL = [NSURL fileURLWithPath:normalized.stringByDeletingLastPathComponent];
+    }
+    if ([panel runModal] == NSModalResponseOK) {
+        _fields[key].stringValue = panel.URL.path.stringByStandardizingPath;
+        _status.stringValue = [NSString stringWithFormat:@"Selected %@", key];
+    }
+}
+
+- (void)refreshCameras:(NSButton*)sender {
+    const AVAuthorizationStatus authorization =
+        [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+    if (authorization == AVAuthorizationStatusNotDetermined) {
+        _status.stringValue = @"Waiting for camera permission";
+        sender.enabled = NO;
+        __weak SenderControlDelegate* weakSelf = self;
+        __weak NSButton* weakSender = sender;
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
+                                 completionHandler:^(BOOL granted) {
+                                   dispatch_async(dispatch_get_main_queue(), ^{
+                                     SenderControlDelegate* strongSelf = weakSelf;
+                                     NSButton* strongSender = weakSender;
+                                     if (strongSelf == nil || strongSender == nil) return;
+                                     strongSender.enabled = YES;
+                                     if (granted) {
+                                         [strongSelf refreshCameras:strongSender];
+                                     } else {
+                                         strongSelf->_status.stringValue =
+                                             @"Camera access denied; enable it in System Settings";
+                                     }
+                                   });
+                                 }];
+        return;
+    }
+    if (authorization == AVAuthorizationStatusDenied ||
+        authorization == AVAuthorizationStatusRestricted) {
+        _status.stringValue = @"Camera access denied; enable it in System Settings";
+        return;
+    }
+    NSArray<AVCaptureDeviceType>* deviceTypes;
+    if (@available(macOS 14.0, *)) {
+        deviceTypes = @[ AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternal ];
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        deviceTypes =
+            @[ AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternalUnknown ];
+#pragma clang diagnostic pop
+    }
+    AVCaptureDeviceDiscoverySession* discovery = [AVCaptureDeviceDiscoverySession
+        discoverySessionWithDeviceTypes:deviceTypes
+                              mediaType:AVMediaTypeVideo
+                               position:AVCaptureDevicePositionUnspecified];
+    NSArray<AVCaptureDevice*>* devices = discovery.devices;
+    if (devices.count == 0) {
+        _status.stringValue = @"No video capture devices found";
+        return;
+    }
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Cameras"];
+    std::vector<std::string> identifiers;
+    identifiers.reserve(devices.count);
+    for (AVCaptureDevice* device in devices) {
+        identifiers.push_back(Utf8(device.uniqueID));
+        NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:device.localizedName
+                                                     action:@selector(selectCamera:)
+                                              keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = device.uniqueID;
+        [menu addItem:item];
+    }
+    const std::string saved = Utf8([self value:@"device"]);
+    const auto selected = FindSavedCameraDevice(identifiers, saved);
+    if (selected.has_value()) {
+        [menu itemAtIndex:static_cast<NSInteger>(*selected)].state = NSControlStateValueOn;
+    } else if (!saved.empty()) {
+        _status.stringValue = @"Saved camera is unavailable; select another camera";
+    }
+    [menu popUpMenuPositioningItem:selected.has_value()
+                                       ? [menu itemAtIndex:static_cast<NSInteger>(*selected)]
+                                       : nil
+                           atLocation:NSMakePoint(0, sender.bounds.size.height)
+                               inView:sender];
+}
+
+- (void)selectCamera:(NSMenuItem*)sender {
+    _fields[@"device"].stringValue = sender.representedObject;
+    _status.stringValue = [NSString stringWithFormat:@"Selected camera: %@", sender.title];
 }
 
 - (NSString*)value:(NSString*)key { return _fields[key].stringValue; }

@@ -43,6 +43,14 @@ std::string ValidateLaunchConfig(const SenderLaunchConfig& config) {
     return {};
 }
 
+std::optional<std::size_t> FindSavedCameraDevice(
+    const std::vector<std::string>& discovered_device_ids, const std::string& saved_device_id) {
+    for (std::size_t index = 0; index < discovered_device_ids.size(); ++index) {
+        if (discovered_device_ids[index] == saved_device_id) return index;
+    }
+    return std::nullopt;
+}
+
 std::vector<std::string> BuildLauncherArguments(const SenderLaunchConfig& config) {
     return {"--streamer",
             config.streamer_path,

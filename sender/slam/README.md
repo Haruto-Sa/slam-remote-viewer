@@ -377,7 +377,14 @@ instead of letting the producer fail with an unexplained exit code.
 
 Fill in the paths to `macos_live_sender`, `slam-mock-sender`, the camera
 producer, ORB vocabulary, and camera settings, plus the camera and network
-values. Start opens the existing diagnostics window. Stop sends a cooperative
+values. Each executable/data path has a **Choose…** button backed by the native
+file panel. **Cameras…** refreshes the video devices currently reported by
+AVFoundation; choosing one stores its stable unique ID in the existing Camera
+device field. The text fields remain editable for pasted or scripted values. A
+missing saved camera, an empty device list, or denied camera permission is
+reported in the status line without starting the sender.
+
+Start opens the existing diagnostics window. Stop sends a cooperative
 interrupt to the supervisor, which then stops and reaps both sender processes.
 Closing the control window while a session is active performs the same Stop and
 waits for completion before closing. Quit and Command-Q likewise defer app

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,8 @@ enum class ControlState { kIdle, kStarting, kRunning, kStopping, kSucceeded, kFa
 
 std::vector<std::string> BuildLauncherArguments(const SenderLaunchConfig& config);
 std::string ValidateLaunchConfig(const SenderLaunchConfig& config);
+std::optional<std::size_t> FindSavedCameraDevice(
+    const std::vector<std::string>& discovered_device_ids, const std::string& saved_device_id);
 const char* ControlStateName(ControlState state);
 
 class SenderControlModel final {
