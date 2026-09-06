@@ -89,6 +89,43 @@ linger, and removes the Unix socket created by this process. A malformed frame,
 contract violation, or producer disconnect before `session_end` stops the Sender
 with an error instead of sending invalid telemetry.
 
+## Launch the complete macOS sender
+
+`macos_live_sender` starts the Rust live streamer, waits up to a bounded timeout
+for its Unix socket, then starts the existing ORB-SLAM3 camera producer. The
+producer runs continuously and opens its local diagnostics window by default:
+
+```bash
+cargo run \
+  --manifest-path sender/streamer/Cargo.toml \
+  --bin macos_live_sender \
+  -- \
+  --streamer sender/streamer/target/debug/slam-mock-sender \
+  --producer /private/tmp/slam-pose-adapter/orbslam3_macos_camera_sender \
+  --vocabulary /path/to/ORB_SLAM3/Vocabulary/ORBvoc.txt \
+  --settings /path/to/camera.yaml \
+  --device-id CAMERA_DEVICE_ID \
+  --width 640 --height 480 --fps 30 \
+  --slam-socket /private/tmp/slam-live.sock \
+  --endpoint 'tcp://*:5555' \
+  --session live-session \
+  --camera-id mac-camera \
+  --pointcloud-period 30
+```
+
+Use the diagnostics Stop button, close its window, or press Ctrl-C in the
+launcher terminal. The launcher supervises and reaps both child processes. It
+first sends SIGINT for cooperative cleanup, then force-stops a child only if it
+has not exited within five seconds. A pre-existing socket is reported without
+being deleted because it may belong to another Sender. Pass `--headless` when a
+local diagnostics window is not wanted.
+
+Executable and data paths are explicit launcher arguments; the repository does
+not embed machine-specific Homebrew, build, ORB-SLAM3, or camera paths. Child
+commands are passed directly as argument arrays and are never evaluated by a
+shell. Receiver and Unity startup remain separate operations on the receiving
+computer.
+
 ## Requirements
 
 - Rust stable toolchain
