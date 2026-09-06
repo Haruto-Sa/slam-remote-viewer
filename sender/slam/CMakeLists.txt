@@ -46,6 +46,10 @@ target_link_libraries(
     PUBLIC slam::camera_contracts slam::point_cloud_delta_reducer slam::pose_model
 )
 
+add_library(slam_macos_sender_control src/macos_sender_control.cpp)
+add_library(slam::macos_sender_control ALIAS slam_macos_sender_control)
+target_link_libraries(slam_macos_sender_control PUBLIC slam::camera_contracts)
+
 add_library(slam_boundary_publisher src/boundary_publisher.cpp)
 add_library(slam::boundary_publisher ALIAS slam_boundary_publisher)
 target_link_libraries(
@@ -122,6 +126,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_pose_model PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_live_diagnostics PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(slam_macos_sender_control PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(
         slam_point_cloud_delta_reducer PRIVATE -Wall -Wextra -Wpedantic -Werror
     )
@@ -153,6 +158,14 @@ if(APPLE)
         macos_camera_dump
         PRIVATE
             "SHELL:-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/macos/CameraInfo.plist"
+    )
+
+    add_executable(macos_live_sender_control tools/macos_live_sender_control.mm)
+    target_link_libraries(
+        macos_live_sender_control PRIVATE slam::macos_sender_control "-framework AppKit"
+    )
+    target_compile_options(
+        macos_live_sender_control PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic -Werror
     )
 
     if(SLAM_ENABLE_ORB_SLAM3)
@@ -272,4 +285,13 @@ if(SLAM_BUILD_TESTS)
         target_compile_options(live_diagnostics_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME live_diagnostics_tests COMMAND live_diagnostics_tests)
+
+    add_executable(macos_sender_control_tests tests/macos_sender_control_tests.cpp)
+    target_link_libraries(macos_sender_control_tests PRIVATE slam::macos_sender_control)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(
+            macos_sender_control_tests PRIVATE -Wall -Wextra -Wpedantic -Werror
+        )
+    endif()
+    add_test(NAME macos_sender_control_tests COMMAND macos_sender_control_tests)
 endif()
