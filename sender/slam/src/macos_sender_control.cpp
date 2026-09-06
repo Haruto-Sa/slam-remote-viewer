@@ -1,6 +1,7 @@
 #include "slam_remote/launcher/macos_sender_control.hpp"
 
 #include <array>
+#include <tuple>
 #include <utility>
 
 namespace slam_remote::launcher {
@@ -39,6 +40,24 @@ std::string ValidateLaunchConfig(const SenderLaunchConfig& config) {
     if (config.width == 0 || config.height == 0 || config.fps == 0 ||
         config.pointcloud_period == 0) {
         return "width, height, FPS, and point-cloud period must be positive";
+    }
+    return {};
+}
+
+std::string ValidateLaunchPaths(const SenderLaunchConfig& config, const LaunchPathProbe& probe) {
+    const std::array<std::tuple<const std::string*, const char*, bool>, 5> paths{{
+        {&config.launcher_path, "launcher", true},
+        {&config.streamer_path, "streamer", true},
+        {&config.producer_path, "producer", true},
+        {&config.vocabulary_path, "vocabulary", false},
+        {&config.settings_path, "settings", false},
+    }};
+    for (const auto& [path, name, executable] : paths) {
+        if (!probe(*path, executable)) {
+            return std::string(name) + (executable ? " is missing or not executable: "
+                                                     : " file does not exist: ") +
+                   *path;
+        }
     }
     return {};
 }

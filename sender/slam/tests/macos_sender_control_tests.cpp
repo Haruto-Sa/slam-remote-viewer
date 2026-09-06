@@ -12,6 +12,7 @@ using slam_remote::launcher::ControlState;
 using slam_remote::launcher::FindSavedCameraDevice;
 using slam_remote::launcher::SenderControlModel;
 using slam_remote::launcher::SenderLaunchConfig;
+using slam_remote::launcher::ValidateLaunchPaths;
 
 void Check(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
@@ -77,6 +78,25 @@ void TestSavedCameraLookup() {
           "an empty discovery result must not select a camera");
 }
 
+void TestLaunchPathValidation() {
+    auto config = Config();
+    const auto only_known_paths = [](const std::string& path, bool executable) {
+        if (path == "/data/camera.yaml") return false;
+        return executable || path == "/data/vocab";
+    };
+    Check(ValidateLaunchPaths(config, only_known_paths) ==
+              "settings file does not exist: /data/camera.yaml",
+          "the missing data path must be identified before launch");
+
+    config.producer_path = "/app/not-executable";
+    const auto producer_missing = [](const std::string& path, bool) {
+        return path != "/app/not-executable";
+    };
+    Check(ValidateLaunchPaths(config, producer_missing) ==
+              "producer is missing or not executable: /app/not-executable",
+          "a non-executable child must be identified before launch");
+}
+
 }  // namespace
 
 int main() {
@@ -85,6 +105,7 @@ int main() {
         TestStateTransitions();
         TestValidation();
         TestSavedCameraLookup();
+        TestLaunchPathValidation();
     } catch (const std::exception& error) {
         std::cerr << "macOS sender control test failed: " << error.what() << '\n';
         return EXIT_FAILURE;

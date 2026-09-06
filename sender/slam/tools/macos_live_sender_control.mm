@@ -15,6 +15,7 @@ using slam_remote::launcher::ControlStateName;
 using slam_remote::launcher::FindSavedCameraDevice;
 using slam_remote::launcher::SenderControlModel;
 using slam_remote::launcher::SenderLaunchConfig;
+using slam_remote::launcher::ValidateLaunchPaths;
 
 NSString* const kFieldKeys[] = {@"launcher",   @"streamer", @"producer", @"vocabulary",
                                 @"settings",   @"device",   @"width",    @"height",
@@ -288,6 +289,16 @@ std::string NormalizedPath(NSString* value) {
     SenderLaunchConfig config;
     if (![self readConfig:&config]) return;
     std::string error;
+    error = ValidateLaunchPaths(config, [](const std::string& path, bool executable) {
+      NSString* nativePath = [NSString stringWithUTF8String:path.c_str()];
+      NSFileManager* files = NSFileManager.defaultManager;
+      return executable ? [files isExecutableFileAtPath:nativePath]
+                        : [files fileExistsAtPath:nativePath];
+    });
+    if (!error.empty()) {
+        _status.stringValue = [NSString stringWithUTF8String:error.c_str()];
+        return;
+    }
     if (!_model.RequestStart(config, error)) {
         [self refreshControls];
         _status.stringValue = [NSString stringWithUTF8String:error.c_str()];

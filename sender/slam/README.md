@@ -382,7 +382,10 @@ file panel. **Cameras…** refreshes the video devices currently reported by
 AVFoundation; choosing one stores its stable unique ID in the existing Camera
 device field. The text fields remain editable for pasted or scripted values. A
 missing saved camera, an empty device list, or denied camera permission is
-reported in the status line without starting the sender.
+reported in the status line without starting the sender. Start also checks that
+the three selected programs are executable and that the vocabulary and settings
+files still exist, so a stale path is identified before a child exits. Avoid
+long-lived operational paths under `/private/tmp`, which macOS may clean.
 
 Start opens the existing diagnostics window. Stop sends a cooperative
 interrupt to the supervisor, which then stops and reaps both sender processes.
