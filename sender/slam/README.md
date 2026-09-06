@@ -351,7 +351,7 @@ on a second computer accepted the session and Unity displayed the point cloud.
 
 ## Native macOS sender control
 
-`macos_live_sender_control` is an optional AppKit front end for the Rust
+`SLAM Live Sender.app` is an optional AppKit front end for the Rust
 `macos_live_sender` supervisor. It keeps the existing CLI boundaries: the UI
 starts the supervisor as a child process, and the supervisor continues to own
 the Rust streamer and C++ producer lifecycles.
@@ -362,17 +362,34 @@ Build and open the control executable:
 cmake -S sender/slam -B /private/tmp/slam-sender-control \
   -DCMAKE_OSX_ARCHITECTURES=arm64
 cmake --build /private/tmp/slam-sender-control --target macos_live_sender_control
-/private/tmp/slam-sender-control/macos_live_sender_control
+open "/private/tmp/slam-sender-control/SLAM Live Sender.app"
 ```
+
+The CMake target remains `macos_live_sender_control`; its product is the app
+bundle. It can also be double-clicked in Finder. The bundle contains only the
+control executable and metadata. It is not signed or notarized and does not
+embed the Rust launcher, ORB-SLAM3, vocabulary, settings, or Homebrew libraries.
+The bundle declares its local camera purpose because macOS attributes camera
+access by the supervised producer to the responsible GUI application. Accept
+the camera permission prompt on first Start. The app checks authorization before
+launching any child: denied or restricted access is reported in the status line
+instead of letting the producer fail with an unexplained exit code.
 
 Fill in the paths to `macos_live_sender`, `slam-mock-sender`, the camera
 producer, ORB vocabulary, and camera settings, plus the camera and network
 values. Start opens the existing diagnostics window. Stop sends a cooperative
 interrupt to the supervisor, which then stops and reaps both sender processes.
 Closing the control window while a session is active performs the same Stop and
-waits for completion before closing. The status line reports clean exit or the
+waits for completion before closing. Quit and Command-Q likewise defer app
+termination until the supervisor has stopped its children. The status line reports clean exit or the
 child exit code, duplicate Start is disabled, and saved field values are
 restored through macOS user defaults on the next launch.
+
+Because Finder-launched applications do not inherit the repository working
+directory, all five executable/data file fields require absolute paths. Leading
+and trailing whitespace is removed and `~` is expanded before validation. The
+app reports an actionable validation error instead of passing an unresolved
+relative path to `NSTask`.
 
 The control executable does not bundle dependencies or discover cameras. It
 does not start the remote Receiver or Unity and does not change Protocol v1.

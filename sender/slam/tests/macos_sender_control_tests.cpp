@@ -59,6 +59,11 @@ void TestValidation() {
     Check(!model.RequestStart(config, error) && error == "device ID must not be empty",
           "invalid input must not start a process");
     Check(model.state() == ControlState::kIdle, "validation failure must remain idle");
+
+    config = Config();
+    config.launcher_path = "sender/streamer/target/debug/macos_live_sender";
+    Check(!model.RequestStart(config, error) && error == "launcher path must be an absolute path",
+          "Finder launches must reject working-directory-dependent paths");
 }
 
 }  // namespace

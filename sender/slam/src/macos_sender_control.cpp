@@ -26,6 +26,16 @@ std::string ValidateLaunchConfig(const SenderLaunchConfig& config) {
     for (const auto& [value, name] : required) {
         if (Empty(*value)) return std::string(name) + " must not be empty";
     }
+    const std::array<std::pair<const std::string*, const char*>, 5> file_paths{{
+        {&config.launcher_path, "launcher path"},
+        {&config.streamer_path, "streamer path"},
+        {&config.producer_path, "producer path"},
+        {&config.vocabulary_path, "vocabulary path"},
+        {&config.settings_path, "settings path"},
+    }};
+    for (const auto& [value, name] : file_paths) {
+        if (value->front() != '/') return std::string(name) + " must be an absolute path";
+    }
     if (config.width == 0 || config.height == 0 || config.fps == 0 ||
         config.pointcloud_period == 0) {
         return "width, height, FPS, and point-cloud period must be positive";
