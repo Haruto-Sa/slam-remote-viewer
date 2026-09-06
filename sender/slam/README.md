@@ -348,6 +348,34 @@ are follow-up validation rather than blockers for the first live display.
 The 2026-09-05 Apple Silicon E2E run at `640x480@30` delivered 72 live poses and
 two point-cloud deltas from 900 camera frames, with 12 camera drops. A Receiver
 on a second computer accepted the session and Unity displayed the point cloud.
+
+## Native macOS sender control
+
+`macos_live_sender_control` is an optional AppKit front end for the Rust
+`macos_live_sender` supervisor. It keeps the existing CLI boundaries: the UI
+starts the supervisor as a child process, and the supervisor continues to own
+the Rust streamer and C++ producer lifecycles.
+
+Build and open the control executable:
+
+```bash
+cmake -S sender/slam -B /private/tmp/slam-sender-control \
+  -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build /private/tmp/slam-sender-control --target macos_live_sender_control
+/private/tmp/slam-sender-control/macos_live_sender_control
+```
+
+Fill in the paths to `macos_live_sender`, `slam-mock-sender`, the camera
+producer, ORB vocabulary, and camera settings, plus the camera and network
+values. Start opens the existing diagnostics window. Stop sends a cooperative
+interrupt to the supervisor, which then stops and reaps both sender processes.
+Closing the control window while a session is active performs the same Stop and
+waits for completion before closing. The status line reports clean exit or the
+child exit code, duplicate Start is disabled, and saved field values are
+restored through macOS user defaults on the next launch.
+
+The control executable does not bundle dependencies or discover cameras. It
+does not start the remote Receiver or Unity and does not change Protocol v1.
 See [`../../docs/live-slam-conformance.md`](../../docs/live-slam-conformance.md)
 for both the earlier transport measurements and the completed E2E evidence.
 
