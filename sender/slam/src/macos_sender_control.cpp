@@ -1,6 +1,7 @@
 #include "slam_remote/launcher/macos_sender_control.hpp"
 
 #include <array>
+#include <tuple>
 #include <utility>
 
 namespace slam_remote::launcher {
@@ -41,6 +42,32 @@ std::string ValidateLaunchConfig(const SenderLaunchConfig& config) {
         return "width, height, FPS, and point-cloud period must be positive";
     }
     return {};
+}
+
+std::string ValidateLaunchPaths(const SenderLaunchConfig& config, const LaunchPathProbe& probe) {
+    const std::array<std::tuple<const std::string*, const char*, bool>, 5> paths{{
+        {&config.launcher_path, "launcher", true},
+        {&config.streamer_path, "streamer", true},
+        {&config.producer_path, "producer", true},
+        {&config.vocabulary_path, "vocabulary", false},
+        {&config.settings_path, "settings", false},
+    }};
+    for (const auto& [path, name, executable] : paths) {
+        if (!probe(*path, executable)) {
+            return std::string(name) + (executable ? " is missing or not executable: "
+                                                     : " file does not exist: ") +
+                   *path;
+        }
+    }
+    return {};
+}
+
+std::optional<std::size_t> FindSavedCameraDevice(
+    const std::vector<std::string>& discovered_device_ids, const std::string& saved_device_id) {
+    for (std::size_t index = 0; index < discovered_device_ids.size(); ++index) {
+        if (discovered_device_ids[index] == saved_device_id) return index;
+    }
+    return std::nullopt;
 }
 
 std::vector<std::string> BuildLauncherArguments(const SenderLaunchConfig& config) {
