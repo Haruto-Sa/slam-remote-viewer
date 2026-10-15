@@ -139,6 +139,8 @@ int RunSession(int argc, char** argv,
         std::uint64_t frames = 0, poses = 0, state_changes = 0;
         std::uint64_t pointcloud_deltas = 0;
         slam_remote::slam::PointCloudDeltaReducer pointcloud_reducer;
+        slam_remote::diagnostics::ActiveMapTracker active_map_tracker;
+        std::uint64_t active_map_id = 0;
         double tracking_seconds = 0.0;
         auto frame = std::move(*first.frame);
         const auto first_timestamp = frame.timestamp();
@@ -159,10 +161,19 @@ int RunSession(int argc, char** argv,
                 throw std::runtime_error(publisher.last_error());
             }
             if (frames % pointcloud_period == 0) {
-                auto active_points = tracker.ActiveMapPoints();
-                const auto delta = pointcloud_reducer.Reduce(active_points);
+                auto active_map = tracker.ActiveMap();
+                active_map_id = active_map.map_id;
+                const auto transition = active_map_tracker.Observe(active_map_id);
+                if (transition.initialized) {
+                    std::cout << "active map initialized: id=" << transition.current_id << '\n';
+                } else if (transition.changed) {
+                    std::cout << "active map changed: previous=" << transition.previous_id
+                              << " current=" << transition.current_id
+                              << " old points will be removed because map frames are not aligned\n";
+                }
+                const auto delta = pointcloud_reducer.Reduce(active_map.points);
                 if (diagnostics != nullptr) {
-                    diagnostics->UpdatePointCloud(std::move(active_points));
+                    diagnostics->UpdatePointCloud(std::move(active_map.points));
                 }
                 if (delta.operation_count() > 0) {
                     if (!publisher.PublishPointCloud(result.frame_id, result.timestamp, delta)) {
@@ -187,7 +198,9 @@ int RunSession(int argc, char** argv,
                      source.dropped_frames(),
                      input_seconds > 0.0 ? (frames - 1) / input_seconds : 0.0,
                      elapsed_seconds > 0.0 ? frames / elapsed_seconds : 0.0,
-                     frames > 0 ? tracking_seconds * 1000.0 / frames : 0.0});
+                     frames > 0 ? tracking_seconds * 1000.0 / frames : 0.0,
+                     active_map_id,
+                     active_map_tracker.transitions()});
             }
             if (frame_limit.reached(frames)) break;
             const auto next = source.NextFrame(2s);
@@ -209,6 +222,8 @@ int RunSession(int argc, char** argv,
         std::cout << "live SLAM session passed: frames=" << frames << " poses=" << poses
                   << " dropped=" << source.dropped_frames() << " state_changes=" << state_changes
                   << " pointcloud_deltas=" << pointcloud_deltas
+                  << " active_map=" << active_map_id
+                  << " map_transitions=" << active_map_tracker.transitions()
                   << " input_fps=" << (input_seconds > 0.0 ? (frames - 1) / input_seconds : 0.0)
                   << " processed_fps=" << (seconds > 0.0 ? frames / seconds : 0.0)
                   << " mean_track_ms="

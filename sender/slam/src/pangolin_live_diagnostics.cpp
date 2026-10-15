@@ -57,6 +57,8 @@ void RunPangolinLiveDiagnostics(LiveDiagnosticsStore& store,
     pangolin::Var<std::string> poses("ui.Poses", "0");
     pangolin::Var<std::string> pointcloud_deltas("ui.Pointcloud_deltas", "0");
     pangolin::Var<std::string> active_points("ui.Active_points", "0");
+    pangolin::Var<std::string> active_map("ui.Active_map", "-");
+    pangolin::Var<std::string> map_transitions("ui.Map_transitions", "0");
     pangolin::Var<std::string> dropped_frames("ui.Dropped_frames", "0");
     pangolin::Var<std::string> input_fps("ui.Input_FPS", "0.00");
     pangolin::Var<std::string> processed_fps("ui.Processed_FPS", "0.00");
@@ -84,6 +86,8 @@ void RunPangolinLiveDiagnostics(LiveDiagnosticsStore& store,
         poses = std::to_string(snapshot.stats.poses);
         pointcloud_deltas = std::to_string(snapshot.stats.pointcloud_deltas);
         active_points = std::to_string(snapshot.points ? snapshot.points->size() : 0);
+        active_map = std::to_string(snapshot.stats.active_map_id);
+        map_transitions = std::to_string(snapshot.stats.map_transitions);
         dropped_frames = std::to_string(snapshot.stats.dropped_frames);
         input_fps = Decimal(snapshot.stats.input_fps, 2);
         processed_fps = Decimal(snapshot.stats.processed_fps, 2);

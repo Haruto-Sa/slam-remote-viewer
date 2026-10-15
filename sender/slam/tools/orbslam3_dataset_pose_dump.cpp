@@ -124,7 +124,8 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(publisher->last_error());
             }
             if (publisher && index % pointcloud_period == 0) {
-                const auto delta = pointcloud_reducer.Reduce(tracker.ActiveMapPoints());
+                const auto active_map = tracker.ActiveMap();
+                const auto delta = pointcloud_reducer.Reduce(active_map.points);
                 if (delta.operation_count() > 0 &&
                     !publisher->PublishPointCloud(result.frame_id, result.timestamp, delta)) {
                     throw std::runtime_error(publisher->last_error());

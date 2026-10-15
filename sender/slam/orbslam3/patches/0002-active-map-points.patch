@@ -5,14 +5,15 @@ index 72780f4..4abaefd 100644
 @@ -174,0 +175,3 @@ public:
 +    // Snapshot of all points in the current active map. Callers must copy
 +    // point data immediately and must not retain MapPoint pointers.
-+    std::vector<MapPoint*> GetActiveMapPoints();
++    std::pair<unsigned long, std::vector<MapPoint*>> GetActiveMapSnapshot();
 diff --git a/src/System.cc b/src/System.cc
 index 257a0ce..42d7c92 100644
 --- a/src/System.cc
 +++ b/src/System.cc
-@@ -1332,0 +1333,5 @@ vector<MapPoint*> System::GetTrackedMapPoints()
-+vector<MapPoint*> System::GetActiveMapPoints()
+@@ -1332,0 +1333,6 @@ vector<MapPoint*> System::GetTrackedMapPoints()
++pair<unsigned long, vector<MapPoint*>> System::GetActiveMapSnapshot()
 +{
-+    return mpAtlas->GetAllMapPoints();
++    Map* activeMap = mpAtlas->GetCurrentMap();
++    return {activeMap->GetId(), activeMap->GetAllMapPoints()};
 +}
 +

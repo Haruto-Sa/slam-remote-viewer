@@ -103,12 +103,12 @@ class MonocularTracker::Impl final {
         system_->ResetActiveMap();
     }
 
-    std::vector<slam::MapPoint> ActiveMapPoints() {
+    ActiveMapSnapshot ActiveMap() {
         if (shut_down_) {
             throw std::logic_error("cannot read map points after ORB-SLAM3 shutdown");
         }
         std::vector<slam::MapPoint> snapshot;
-        const auto points = system_->GetActiveMapPoints();
+        const auto [map_id, points] = system_->GetActiveMapSnapshot();
         snapshot.reserve(points.size());
         for (ORB_SLAM3::MapPoint* point : points) {
             if (point == nullptr || point->isBad()) continue;
@@ -118,7 +118,7 @@ class MonocularTracker::Impl final {
                                  static_cast<double>(position.y()),
                                  static_cast<double>(position.z())}});
         }
-        return snapshot;
+        return {static_cast<std::uint64_t>(map_id), std::move(snapshot)};
     }
 
     void Shutdown() noexcept {
@@ -142,8 +142,8 @@ slam::TrackingResult MonocularTracker::Track(const camera::ImageFrame& frame) {
     return impl_->Track(frame);
 }
 
-std::vector<slam::MapPoint> MonocularTracker::ActiveMapPoints() {
-    return impl_->ActiveMapPoints();
+ActiveMapSnapshot MonocularTracker::ActiveMap() {
+    return impl_->ActiveMap();
 }
 
 void MonocularTracker::Reset() { impl_->Reset(); }
