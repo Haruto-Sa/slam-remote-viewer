@@ -166,6 +166,10 @@ camera-contract project.
 
 ## ORB-SLAM3 pose adapter
 
+For portable Gray8 input from a pipe (the host stage of smartphone capture),
+see [streamed camera input](../../docs/streamed-camera-input.md). This runs the
+same real SLAM backend and publisher without requiring a macOS camera device.
+
 `slam::TrackingResult` is the backend-independent output of monocular tracking.
 It preserves the input frame ID and monotonic nanosecond timestamp, reports
 initializing, tracking, lost, or relocalizing, and contains canonical `Twc` only

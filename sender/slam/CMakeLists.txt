@@ -27,6 +27,10 @@ add_library(slam_recorded_frame_source src/recorded_frame_source.cpp)
 add_library(slam::recorded_frame_source ALIAS slam_recorded_frame_source)
 target_link_libraries(slam_recorded_frame_source PUBLIC slam::camera_contracts)
 
+add_library(slam_streamed_frame_reader src/streamed_frame_reader.cpp)
+add_library(slam::streamed_frame_reader ALIAS slam_streamed_frame_reader)
+target_link_libraries(slam_streamed_frame_reader PUBLIC slam::camera_contracts)
+
 add_library(slam_calibration_io src/calibration_io.cpp)
 add_library(slam::calibration_io ALIAS slam_calibration_io)
 target_link_libraries(slam_calibration_io PUBLIC slam::camera_contracts)
@@ -93,9 +97,14 @@ if(SLAM_ENABLE_ORB_SLAM3)
             pango_display
             GLEW::GLEW
             opencv_core
+            opencv_imgproc
             "${SLAM_ORB_SLAM3_LIBRARY}"
     )
     add_executable(orbslam3_dataset_pose_dump tools/orbslam3_dataset_pose_dump.cpp)
+    add_executable(orbslam3_stream_camera_sender tools/orbslam3_stream_camera_sender.cpp)
+    target_link_libraries(orbslam3_stream_camera_sender PRIVATE
+        slam::orbslam3_pose_adapter slam::streamed_frame_reader
+        slam::boundary_publisher opencv_core)
     target_link_libraries(
         orbslam3_dataset_pose_dump
         PRIVATE
@@ -104,6 +113,7 @@ if(SLAM_ENABLE_ORB_SLAM3)
             opencv_imgcodecs
     )
     if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(orbslam3_stream_camera_sender PRIVATE -Wall -Wextra -Wpedantic -Werror)
         target_compile_options(
             slam_orbslam3_pose_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror
         )
@@ -121,6 +131,7 @@ target_link_libraries(calibration_convert PRIVATE slam::calibration_io)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
     target_compile_options(slam_recorded_frame_source PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(slam_streamed_frame_reader PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(recorded_frame_dump PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(slam_calibration_io PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(calibration_convert PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -244,6 +255,12 @@ endif()
 
 if(SLAM_BUILD_TESTS)
     add_executable(camera_contract_tests tests/camera_contract_tests.cpp)
+    add_executable(streamed_frame_reader_tests tests/streamed_frame_reader_tests.cpp)
+    target_link_libraries(streamed_frame_reader_tests PRIVATE slam::streamed_frame_reader)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(streamed_frame_reader_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME streamed_frame_reader_tests COMMAND streamed_frame_reader_tests)
     target_link_libraries(camera_contract_tests PRIVATE slam::camera_contracts)
     if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
         target_compile_options(camera_contract_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
