@@ -1,5 +1,12 @@
 # Unity Viewer
 
+The viewer supports the opt-in `delta_snapshot` point-cloud mode. A complete
+snapshot removes points absent from its `add` list; an empty snapshot clears
+the map. Matching session settings are required, and repeated/stale snapshot
+sequences are rejected by ingress. Legacy `delta` streams remain supported.
+Upgrade Receiver and Unity together before enabling this mode on a sender.
+Periodic sender snapshots and multi-device validation are tracked under #107.
+
 The Unity project receives validated Protocol v1 telemetry from the Receiver.
 It expects converted `unity_world` messages on `tcp://127.0.0.1:5556` by
 default.

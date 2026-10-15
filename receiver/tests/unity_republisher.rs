@@ -54,3 +54,32 @@ fn republishes_converted_settings_over_pub_sub() {
 fn parse_republished_settings(payload: &str) -> SettingsMessage {
     serde_json::from_str(payload).expect("settings payload should deserialize")
 }
+
+#[test]
+fn forwards_snapshot_marker_and_converted_points_to_two_viewers() {
+    use slam_receiver::protocol::{POINTCLOUD_TOPIC, PointCloudMessage};
+    let context = zmq::Context::new();
+    let publisher = context.socket(zmq::PUB).unwrap();
+    publisher.bind("inproc://snapshot-fanout").unwrap();
+    let subscribers: Vec<_> = (0..2)
+        .map(|_| {
+            let socket = context.socket(zmq::SUB).unwrap();
+            socket.set_subscribe(b"slam/v1/").unwrap();
+            socket.set_rcvtimeo(1000).unwrap();
+            socket.connect("inproc://snapshot-fanout").unwrap();
+            socket
+        })
+        .collect();
+    thread::sleep(Duration::from_millis(50));
+    let mut snapshot = parse_telemetry(POINTCLOUD_TOPIC,
+        r#"{"v":1,"session":"s","seq":9,"t":3,"snapshot":true,"add":[[7,1,2,3]],"update":[],"remove":[]}"#).unwrap();
+    prepare_telemetry_for_unity(&mut snapshot, &mut QuaternionContinuity::new()).unwrap();
+    publish_encoded(&publisher, &encode_telemetry(&snapshot).unwrap()).unwrap();
+    for subscriber in subscribers {
+        let packet = decode_multipart(&subscriber.recv_multipart(0).unwrap()).unwrap();
+        let points: PointCloudMessage = serde_json::from_str(&packet.payload).unwrap();
+        assert_eq!(packet.topic, POINTCLOUD_TOPIC);
+        assert!(points.snapshot);
+        assert_eq!(points.add, vec![(7, 1.0, -2.0, 3.0)]);
+    }
+}

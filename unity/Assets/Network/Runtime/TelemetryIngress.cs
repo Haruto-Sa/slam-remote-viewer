@@ -7,6 +7,8 @@ namespace Slam.RemoteViewer.Network
     {
         private readonly BoundedMessageQueue<ITelemetryMessage> queue;
         private string activeSession;
+        private bool snapshotsEnabled;
+        private ulong? lastPointCloudSequence;
         private long acceptedCount;
         private long rejectedCount;
 
@@ -30,12 +32,29 @@ namespace Slam.RemoteViewer.Network
 
             if (message is SettingsMessage settings)
             {
+                if (activeSession != settings.Session) lastPointCloudSequence = null;
                 activeSession = settings.Session;
+                snapshotsEnabled = settings.PointCloudMode == "delta_snapshot";
             }
             else if (!string.Equals(activeSession, message.Session, StringComparison.Ordinal))
             {
                 Reject("telemetry arrived before matching unity_world settings");
                 return false;
+            }
+
+            if (message is PointCloudMessage points && points.Snapshot && !snapshotsEnabled)
+            {
+                Reject("snapshot requires delta_snapshot settings");
+                return false;
+            }
+            if (snapshotsEnabled && message is PointCloudMessage orderedPoints)
+            {
+                if (lastPointCloudSequence.HasValue && orderedPoints.SequenceNumber <= lastPointCloudSequence.Value)
+                {
+                    Reject("stale point-cloud sequence");
+                    return false;
+                }
+                lastPointCloudSequence = orderedPoints.SequenceNumber;
             }
 
             queue.Enqueue(message);

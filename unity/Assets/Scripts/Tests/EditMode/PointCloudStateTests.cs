@@ -8,6 +8,36 @@ namespace Slam.RemoteViewer.Tests
     public sealed class PointCloudStateTests
     {
         [Test]
+        public void SnapshotRemovesMissingPointsAndEmptySnapshotClearsMap()
+        {
+            var state = new PointCloudState();
+            state.HandleMessage(Settings("session-a"));
+            state.HandleMessage(Delta("session-a", Add(Point(1, 1, 0, 0), Point(2, 2, 0, 0))));
+            var snapshot = Delta("session-a", Add(Point(2, 20, 0, 0)), snapshot: true);
+            Assert.That(state.HandleMessage(snapshot), Is.True);
+            Assert.That(state.PointCount, Is.EqualTo(1));
+            Assert.That(state.TryGetPoint(1, out _), Is.False);
+            AssertPoint(state, 2, new Vector3(20, 0, 0));
+            long revision = state.Revision;
+            Assert.That(state.HandleMessage(snapshot), Is.False);
+            Assert.That(state.Revision, Is.EqualTo(revision));
+            Assert.That(state.HandleMessage(Delta("other-session", snapshot: true)), Is.False);
+            Assert.That(state.PointCount, Is.EqualTo(1));
+            Assert.That(state.HandleMessage(Delta("session-a", snapshot: true)), Is.True);
+            Assert.That(state.PointCount, Is.Zero);
+        }
+
+        [Test]
+        public void InvalidSnapshotDoesNotPartiallyClearExistingPoints()
+        {
+            var state = new PointCloudState();
+            state.HandleMessage(Settings("session-a"));
+            state.HandleMessage(Delta("session-a", Add(Point(1, 1, 0, 0))));
+            Assert.That(state.HandleMessage(Delta("session-a", Add(Point(2, double.MaxValue, 0, 0)), snapshot: true)), Is.False);
+            Assert.That(state.HandleMessage(Delta("session-a", Add(Point(2, 0, 0, 0), Point(2, 1, 0, 0)), snapshot: true)), Is.False);
+            AssertPoint(state, 1, new Vector3(1, 0, 0));
+        }
+        [Test]
         public void AppliesAddUpdateAndRemoveOperations()
         {
             var state = new PointCloudState();
@@ -133,7 +163,8 @@ namespace Slam.RemoteViewer.Tests
             string session,
             IList<IList<double>> add = null,
             IList<IList<double>> update = null,
-            IList<ulong> remove = null)
+            IList<ulong> remove = null,
+            bool snapshot = false)
         {
             return new PointCloudMessage(
                 1,
@@ -142,7 +173,7 @@ namespace Slam.RemoteViewer.Tests
                 0,
                 add ?? Add(),
                 update ?? Add(),
-                remove ?? new ulong[0]);
+                remove ?? new ulong[0], snapshot);
         }
 
         private static IList<IList<double>> Add(params IList<double>[] points)
