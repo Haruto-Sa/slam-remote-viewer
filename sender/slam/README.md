@@ -349,6 +349,28 @@ The 2026-09-05 Apple Silicon E2E run at `640x480@30` delivered 72 live poses and
 two point-cloud deltas from 900 camera frames, with 12 camera drops. A Receiver
 on a second computer accepted the session and Unity displayed the point cloud.
 
+### Active-map transitions
+
+The ORB-SLAM3 adapter copies the numeric identity and points of the current
+active map into a backend-independent snapshot. The live diagnostics panel
+shows `Active_map` and `Map_transitions`, and the producer logs both IDs whenever
+the active map changes. A transition commonly follows tracking loss when
+ORB-SLAM3 cannot relocalize in the previous map.
+
+Identity is sampled at the configured point-cloud period, so the counter reports
+observed transitions; a switch and return between samples may be missed. Rebuild
+ORB-SLAM3 and the adapter together after updating the snapshot API patch. For an
+existing source tree with the previous patch applied, use a fresh temporary
+`SLAM_ORB_WORK_ROOT` with the bootstrap script.
+
+The point-cloud reducer intentionally compares the new active snapshot with its
+previous baseline. Points that disappeared are published as removals. Keeping
+the old points would look more persistent, but would combine independent map
+coordinate frames without a known alignment and produce a geometrically false
+map. Frequent transitions should first be addressed with camera-specific
+calibration and tracking-quality work. A future map-aware protocol would be
+required to retain multiple submaps with explicit transforms.
+
 ## Native macOS sender control
 
 `SLAM Live Sender.app` is an optional AppKit front end for the Rust

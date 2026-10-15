@@ -7,6 +7,19 @@
 
 namespace slam_remote::diagnostics {
 
+MapTransition ActiveMapTracker::Observe(std::uint64_t map_id) noexcept {
+    if (!initialized_) {
+        initialized_ = true;
+        active_id_ = map_id;
+        return {true, false, map_id, map_id};
+    }
+    const auto previous = active_id_;
+    if (previous == map_id) return {false, false, previous, map_id};
+    active_id_ = map_id;
+    ++transitions_;
+    return {false, true, previous, map_id};
+}
+
 bool ConsumeDiagnosticsOption(int& argc, char** argv) {
     if (argc <= 1 || argv == nullptr || argv[argc - 1] == nullptr ||
         std::string(argv[argc - 1]) != "--diagnostics") {

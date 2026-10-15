@@ -27,6 +27,26 @@ struct LiveDiagnosticsStats final {
     double input_fps{0.0};
     double processed_fps{0.0};
     double mean_tracking_ms{0.0};
+    std::uint64_t active_map_id{0};
+    std::uint64_t map_transitions{0};
+};
+
+struct MapTransition final {
+    bool initialized{false};
+    bool changed{false};
+    std::uint64_t previous_id{0};
+    std::uint64_t current_id{0};
+};
+
+class ActiveMapTracker final {
+   public:
+    MapTransition Observe(std::uint64_t map_id) noexcept;
+    [[nodiscard]] std::uint64_t transitions() const noexcept { return transitions_; }
+
+   private:
+    bool initialized_{false};
+    std::uint64_t active_id_{0};
+    std::uint64_t transitions_{0};
 };
 
 struct LiveDiagnosticsSnapshot final {

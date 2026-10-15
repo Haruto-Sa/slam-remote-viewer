@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "slam_remote/camera/image_frame.hpp"
 #include "slam_remote/slam/pose.hpp"
@@ -15,6 +17,11 @@ struct MonocularTrackerConfig final {
     bool enable_viewer{false};
 };
 
+struct ActiveMapSnapshot final {
+    std::uint64_t map_id;
+    std::vector<slam::MapPoint> points;
+};
+
 /// Owns one ORB-SLAM3 monocular system. No ORB-SLAM3 type crosses this header.
 class MonocularTracker final {
    public:
@@ -24,7 +31,7 @@ class MonocularTracker final {
     MonocularTracker& operator=(const MonocularTracker&) = delete;
 
     slam::TrackingResult Track(const camera::ImageFrame& frame);
-    std::vector<slam::MapPoint> ActiveMapPoints();
+    ActiveMapSnapshot ActiveMap();
     void Reset();
     void Shutdown() noexcept;
 

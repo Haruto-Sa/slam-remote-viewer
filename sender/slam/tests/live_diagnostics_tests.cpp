@@ -17,6 +17,7 @@ using slam_remote::diagnostics::LiveDiagnosticsStats;
 using slam_remote::diagnostics::LiveDiagnosticsStore;
 using slam_remote::diagnostics::MakePreviewImage;
 using slam_remote::diagnostics::ConsumeDiagnosticsOption;
+using slam_remote::diagnostics::ActiveMapTracker;
 
 void Check(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
@@ -94,6 +95,30 @@ void TestDiagnosticsOption() {
     Check(headless_count == 2, "headless positional arguments must remain unchanged");
 }
 
+void TestActiveMapTransitions() {
+    ActiveMapTracker tracker;
+    const auto initial = tracker.Observe(4);
+    Check(initial.initialized && !initial.changed && initial.current_id == 4,
+          "the first active map must initialize without a transition");
+    const auto unchanged = tracker.Observe(4);
+    Check(!unchanged.initialized && !unchanged.changed && tracker.transitions() == 0,
+          "repeated snapshots of one map must not count as transitions");
+    const auto changed = tracker.Observe(9);
+    Check(changed.changed && changed.previous_id == 4 && changed.current_id == 9,
+          "a changed map ID must expose both identities");
+    Check(tracker.transitions() == 1, "a map ID change must increment the counter once");
+    const auto returned = tracker.Observe(4);
+    Check(returned.changed && returned.previous_id == 9 && returned.current_id == 4 &&
+              tracker.transitions() == 2,
+          "returning to an earlier map must count as another transition");
+    ActiveMapTracker zero_tracker;
+    const auto zero = zero_tracker.Observe(0);
+    Check(zero.initialized && !zero.changed && zero.current_id == 0,
+          "map zero is a valid identity, not an uninitialized sentinel");
+    Check(!zero_tracker.Observe(0).changed && zero_tracker.transitions() == 0,
+          "repeated map zero must not count as a transition");
+}
+
 }  // namespace
 
 int main() {
@@ -102,6 +127,7 @@ int main() {
         TestLatestOnlySnapshot();
         TestFinishedState();
         TestDiagnosticsOption();
+        TestActiveMapTransitions();
     } catch (const std::exception& error) {
         std::cerr << "live diagnostics test failed: " << error.what() << '\n';
         return EXIT_FAILURE;
