@@ -29,6 +29,8 @@ const RECOVERED_TELEMETRY_FILE: &str = "telemetry.recovered.ndjson";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionRejection {
+    SnapshotNotAdvertised,
+    StalePointCloud { seq: u64, last: u64 },
     SettingsRequired { session: String },
     MismatchedSession { expected: String, actual: String },
 }
@@ -36,6 +38,12 @@ pub enum SessionRejection {
 impl fmt::Display for SessionRejection {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::StalePointCloud { seq, last } => {
+                write!(formatter, "stale point cloud seq={seq}, last={last}")
+            }
+            Self::SnapshotNotAdvertised => {
+                write!(formatter, "snapshot requires delta_snapshot settings")
+            }
             Self::SettingsRequired { session } => {
                 write!(
                     formatter,
@@ -55,6 +63,8 @@ impl Error for SessionRejection {}
 #[derive(Debug, Default)]
 pub struct SessionGate {
     active_session: Option<String>,
+    snapshots_enabled: bool,
+    last_pointcloud_seq: Option<u64>,
 }
 
 impl SessionGate {
@@ -64,7 +74,11 @@ impl SessionGate {
 
     pub fn accept(&mut self, message: &TelemetryMessage) -> Result<(), SessionRejection> {
         if let TelemetryMessage::Settings(settings) = message {
+            if self.active_session.as_deref() != Some(&settings.session) {
+                self.last_pointcloud_seq = None;
+            }
             self.active_session = Some(settings.session.clone());
+            self.snapshots_enabled = settings.pointcloud_mode == "delta_snapshot";
             return Ok(());
         }
 
@@ -81,6 +95,24 @@ impl SessionGate {
             });
         }
 
+        if matches!(message, TelemetryMessage::PointCloud(points) if points.snapshot)
+            && !self.snapshots_enabled
+        {
+            return Err(SessionRejection::SnapshotNotAdvertised);
+        }
+        if self.snapshots_enabled
+            && let TelemetryMessage::PointCloud(points) = message
+        {
+            if let Some(last) = self.last_pointcloud_seq
+                && points.seq <= last
+            {
+                return Err(SessionRejection::StalePointCloud {
+                    seq: points.seq,
+                    last,
+                });
+            }
+            self.last_pointcloud_seq = Some(points.seq);
+        }
         Ok(())
     }
 }
@@ -486,6 +518,7 @@ struct RecoveryEnvelope {
 
 #[derive(Default)]
 struct RecoveredTelemetryState {
+    gate: SessionGate,
     settings_seen: bool,
     message_count: u64,
     pose_count: u64,
@@ -809,6 +842,10 @@ fn apply_recovered_line(
         ));
     }
 
+    recovered
+        .gate
+        .accept(&message)
+        .map_err(|error| invalid_recovery(path, Some(line), error.to_string()))?;
     recovered.message_count += 1;
     match message {
         TelemetryMessage::Settings(_) => recovered.settings_seen = true,
@@ -832,17 +869,19 @@ fn validate_recovered_settings(
         ("frame", settings.frame.as_str(), "unity_world"),
         ("pose_convention", settings.pose_convention.as_str(), "Twc"),
         ("quaternion", settings.quaternion.as_str(), "xyzw"),
-        (
-            "pointcloud_mode",
-            settings.pointcloud_mode.as_str(),
-            "delta",
-        ),
     ];
     if settings.v != 1 {
         return Err(invalid_recovery(
             path,
             Some(line),
             format!("unsupported protocol version: {}", settings.v),
+        ));
+    }
+    if !crate::protocol::supported_pointcloud_mode(&settings.pointcloud_mode) {
+        return Err(invalid_recovery(
+            path,
+            Some(line),
+            "unsupported pointcloud_mode",
         ));
     }
     if settings.session != checkpoint.session {
@@ -924,6 +963,9 @@ pub(crate) fn write_recorded_message(
 }
 
 pub(crate) fn apply_delta(points: &mut BTreeMap<u64, [f64; 3]>, delta: &PointCloudMessage) {
+    if delta.snapshot {
+        points.clear();
+    }
     for id in &delta.remove {
         points.remove(id);
     }
@@ -1047,7 +1089,6 @@ pub(crate) fn write_atomic(
 mod tests {
     use std::{
         fs::{self, OpenOptions},
-        io::Write as _,
         sync::atomic::{AtomicU64, Ordering},
     };
 
@@ -1106,6 +1147,7 @@ mod tests {
         remove: Vec<u64>,
     ) -> TelemetryMessage {
         TelemetryMessage::PointCloud(PointCloudMessage {
+            snapshot: false,
             v: 1,
             session: session.to_owned(),
             seq: 0,
@@ -1158,6 +1200,94 @@ mod tests {
             gate.accept(&pose),
             Err(SessionRejection::MismatchedSession { .. })
         ));
+    }
+
+    #[test]
+    fn snapshots_replace_recorded_recovered_and_replayed_points() {
+        let mut settings_message = settings("snapshot-session");
+        let TelemetryMessage::Settings(ref mut config) = settings_message else {
+            unreachable!()
+        };
+        config.pointcloud_mode = "delta_snapshot".into();
+        let initial = pointcloud(
+            "snapshot-session",
+            vec![(1, 1.0, 0.0, 0.0), (2, 2.0, 0.0, 0.0)],
+            vec![],
+            vec![],
+        );
+        let mut replacement = pointcloud(
+            "snapshot-session",
+            vec![(2, 20.0, 0.0, 0.0)],
+            vec![],
+            vec![],
+        );
+        let TelemetryMessage::PointCloud(ref mut snapshot) = replacement else {
+            unreachable!()
+        };
+        snapshot.snapshot = true;
+        snapshot.seq = 1;
+        let mut gate = SessionGate::new();
+        gate.accept(&settings("snapshot-session")).unwrap();
+        assert_eq!(
+            gate.accept(&replacement),
+            Err(SessionRejection::SnapshotNotAdvertised)
+        );
+        gate.accept(&settings_message).unwrap();
+        gate.accept(&replacement).unwrap();
+        gate.accept(&settings_message).unwrap();
+        assert!(matches!(
+            gate.accept(&replacement),
+            Err(SessionRejection::StalePointCloud { .. })
+        ));
+
+        let root = TestDirectory::new("snapshots");
+        let recorder = TelemetryRecorder::start(&root.0);
+        for message in [&settings_message, &initial, &replacement] {
+            recorder.record(message).unwrap();
+        }
+        let completed = recorder.finish().unwrap();
+        assert_eq!(completed[0].point_count, 1);
+        assert!(
+            fs::read_to_string(completed[0].directory.join("pointcloud.ply"))
+                .unwrap()
+                .ends_with("20 0 0\n")
+        );
+        let loaded = crate::playback::load_session(&completed[0].directory).unwrap();
+        assert_eq!(loaded.metadata().point_count, 1);
+
+        let telemetry_path = completed[0].directory.join("telemetry.ndjson");
+        let telemetry = fs::read_to_string(&telemetry_path).unwrap();
+        fs::write(
+            &telemetry_path,
+            telemetry.replace("delta_snapshot", "delta"),
+        )
+        .unwrap();
+        assert!(crate::playback::load_session(&completed[0].directory).is_err());
+        fs::write(&telemetry_path, telemetry.replace("\"seq\":1", "\"seq\":0")).unwrap();
+        assert!(crate::playback::load_session(&completed[0].directory).is_err());
+
+        let interrupted = TestDirectory::new("snapshot-recovery");
+        let TelemetryMessage::Settings(config) = &settings_message else {
+            unreachable!()
+        };
+        let mut recording = SessionRecording::start(&interrupted.0, config).unwrap();
+        for message in [&settings_message, &initial, &replacement] {
+            recording.append(message).unwrap();
+        }
+        recording.checkpoint(true).unwrap();
+        drop(recording);
+        let recovered = recover_incomplete_recordings(&interrupted.0).unwrap();
+        assert!(recovered.failures.is_empty());
+        assert_eq!(recovered.recovered[0].point_count, 1);
+        crate::playback::load_session(&recovered.recovered[0].directory).unwrap();
+
+        let TelemetryMessage::PointCloud(mut empty) = replacement else {
+            unreachable!()
+        };
+        empty.add.clear();
+        let mut retained = BTreeMap::from([(2, [20.0, 0.0, 0.0])]);
+        apply_delta(&mut retained, &empty);
+        assert!(retained.is_empty());
     }
 
     #[test]

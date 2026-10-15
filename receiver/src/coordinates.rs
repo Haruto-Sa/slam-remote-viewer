@@ -201,6 +201,7 @@ mod tests {
     #[test]
     fn converts_pointcloud_add_and_update_but_preserves_ids_and_removals() {
         let mut message = TelemetryMessage::PointCloud(PointCloudMessage {
+            snapshot: false,
             v: 1,
             session: "session-1".to_owned(),
             seq: 7,

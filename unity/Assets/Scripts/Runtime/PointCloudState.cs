@@ -73,6 +73,23 @@ namespace Slam.RemoteViewer
 
             bool changed = false;
 
+            if (pointCloud.Snapshot)
+            {
+                if (pointCloud.Update.Count != 0 || pointCloud.Remove.Count != 0) return false;
+                var retained = new HashSet<ulong>();
+                foreach (PointEntry point in pointCloud.Add)
+                {
+                    if (!retained.Add(point.Id) || !IsFinite((float)point.X) ||
+                        !IsFinite((float)point.Y) || !IsFinite((float)point.Z)) return false;
+                }
+                var removed = new List<ulong>();
+                foreach (ulong id in points.Keys)
+                {
+                    if (!retained.Contains(id)) removed.Add(id);
+                }
+                foreach (ulong id in removed) changed |= points.Remove(id);
+            }
+
             foreach (ulong id in pointCloud.Remove)
             {
                 changed |= points.Remove(id);

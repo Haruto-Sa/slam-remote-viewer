@@ -58,9 +58,19 @@ pub struct PointCloudMessage {
     pub session: String,
     pub seq: u64,
     pub t: f64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub snapshot: bool,
     pub add: Vec<PointEntry>,
     pub update: Vec<PointEntry>,
     pub remove: Vec<u64>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
+pub fn supported_pointcloud_mode(mode: &str) -> bool {
+    matches!(mode, "delta" | "delta_snapshot")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +85,7 @@ pub enum ValidationError {
         actual: String,
     },
     InvalidTimestamp,
+    InvalidSnapshot,
     NonFiniteNumber {
         field: &'static str,
     },
@@ -146,6 +157,10 @@ impl fmt::Display for ValidationError {
             Self::InvalidTimestamp => {
                 write!(formatter, "t must be finite and non-negative")
             }
+            Self::InvalidSnapshot => write!(
+                formatter,
+                "snapshot must contain unique add IDs and empty update/remove arrays"
+            ),
             Self::NonFiniteNumber { field } => {
                 write!(formatter, "{field} must contain only finite numbers")
             }
@@ -169,7 +184,13 @@ impl SettingsMessage {
         validate_fixed_value("frame", &self.frame, "slam_world")?;
         validate_fixed_value("pose_convention", &self.pose_convention, "Twc")?;
         validate_fixed_value("quaternion", &self.quaternion, "xyzw")?;
-        validate_fixed_value("pointcloud_mode", &self.pointcloud_mode, "delta")?;
+        if !supported_pointcloud_mode(&self.pointcloud_mode) {
+            return Err(ValidationError::InvalidFixedValue {
+                field: "pointcloud_mode",
+                expected: "delta or delta_snapshot",
+                actual: self.pointcloud_mode.clone(),
+            });
+        }
 
         Ok(())
     }
@@ -192,6 +213,15 @@ impl PointCloudMessage {
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_common(self.v, &self.session)?;
         validate_timestamp(self.t)?;
+        if self.snapshot {
+            let mut ids = std::collections::HashSet::new();
+            if !self.update.is_empty()
+                || !self.remove.is_empty()
+                || self.add.iter().any(|point| !ids.insert(point.0))
+            {
+                return Err(ValidationError::InvalidSnapshot);
+            }
+        }
 
         validate_point_entries("add", &self.add)?;
         validate_point_entries("update", &self.update)?;
@@ -352,6 +382,44 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snapshot_contract_and_legacy_default() {
+        let legacy: super::PointCloudMessage = serde_json::from_str(
+            r#"{"v":1,"session":"s","seq":1,"t":0,"add":[],"update":[],"remove":[]}"#,
+        )
+        .unwrap();
+        assert!(!legacy.snapshot);
+        assert!(
+            serde_json::to_value(&legacy)
+                .unwrap()
+                .get("snapshot")
+                .is_none()
+        );
+        let mut snapshot = legacy;
+        snapshot.snapshot = true;
+        snapshot.add = vec![(1, 1.0, 2.0, 3.0)];
+        assert!(snapshot.validate().is_ok());
+        snapshot.add.push((1, 4.0, 5.0, 6.0));
+        assert_eq!(
+            snapshot.validate(),
+            Err(super::ValidationError::InvalidSnapshot)
+        );
+        snapshot.add.clear();
+        snapshot.remove.push(1);
+        assert_eq!(
+            snapshot.validate(),
+            Err(super::ValidationError::InvalidSnapshot)
+        );
+        snapshot.remove.clear();
+        snapshot.update.push((1, 0.0, 0.0, 0.0));
+        assert_eq!(
+            snapshot.validate(),
+            Err(super::ValidationError::InvalidSnapshot)
+        );
+        snapshot.update.clear();
+        assert!(snapshot.validate().is_ok());
+        assert!(super::supported_pointcloud_mode("delta_snapshot"));
+    }
     use super::*;
 
     const SETTINGS_EXAMPLE: &str = include_str!("../../protocol/settings.example.json");
@@ -439,7 +507,7 @@ mod tests {
             ("frame", "camera_world", "slam_world"),
             ("pose_convention", "Tcw", "Twc"),
             ("quaternion", "wxyz", "xyzw"),
-            ("pointcloud_mode", "snapshot", "delta"),
+            ("pointcloud_mode", "snapshot", "delta or delta_snapshot"),
         ];
 
         for (field, actual, expected) in cases {

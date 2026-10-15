@@ -254,6 +254,7 @@ impl ClipDraft {
         let mut initial_pose = pose.clone();
         initial_pose.t = start_time;
         let snapshot = TelemetryMessage::PointCloud(PointCloudMessage {
+            snapshot: settings.pointcloud_mode == "delta_snapshot",
             v: settings.v,
             session: settings.session.clone(),
             seq: source.latest_pointcloud_seq.unwrap_or(0),
@@ -642,6 +643,46 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_replaces_clip_points_and_survives_playback() {
+        let root = TestDirectory::new("snapshot-clip");
+        let recorder = ClipRecorder::start(&root.0);
+        let mut config = settings("source");
+        let TelemetryMessage::Settings(ref mut value) = config else {
+            unreachable!()
+        };
+        value.pointcloud_mode = "delta_snapshot".into();
+        recorder.observe(&config).unwrap();
+        recorder.observe(&pose("source", 1, 1.0, 1.0)).unwrap();
+        recorder
+            .observe(&points(
+                "source",
+                1,
+                1.0,
+                vec![(7, 1.0, 2.0, 3.0)],
+                vec![],
+                vec![],
+            ))
+            .unwrap();
+        recorder.start_clip().unwrap();
+        let mut replacement = points("source", 2, 2.0, vec![(9, 9.0, 0.0, 0.0)], vec![], vec![]);
+        let TelemetryMessage::PointCloud(ref mut value) = replacement else {
+            unreachable!()
+        };
+        value.snapshot = true;
+        recorder.observe(&replacement).unwrap();
+        recorder.stop_clip().unwrap();
+        let summaries = recorder.finish().unwrap();
+        assert_eq!(summaries[0].point_count, 1);
+        assert!(
+            fs::read_to_string(summaries[0].directory.join("pointcloud.ply"))
+                .unwrap()
+                .ends_with("9 0 0\n")
+        );
+        let loaded = load_session(&summaries[0].directory).unwrap();
+        assert_eq!(loaded.metadata().point_count, 1);
+    }
+
+    #[test]
     fn applies_retention_after_clip_finalization() {
         let root = TestDirectory::new("retention-finalization");
         let retention = RetentionManager::new(
@@ -758,6 +799,7 @@ mod tests {
         remove: Vec<u64>,
     ) -> TelemetryMessage {
         TelemetryMessage::PointCloud(PointCloudMessage {
+            snapshot: false,
             v: 1,
             session: session.to_owned(),
             seq,

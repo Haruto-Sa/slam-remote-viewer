@@ -88,7 +88,7 @@ namespace Slam.RemoteViewer.Network
             {
                 if (settings.Version != 1 || settings.Unit != "m" || settings.Frame != "unity_world" ||
                     settings.PoseConvention != "Twc" || settings.QuaternionOrder != "xyzw" ||
-                    settings.PointCloudMode != "delta" || settings.Camera == null)
+                    (settings.PointCloudMode != "delta" && settings.PointCloudMode != "delta_snapshot") || settings.Camera == null)
                 {
                     error = "settings do not match the Unity Protocol v1 contract";
                     return false;
@@ -110,6 +110,23 @@ namespace Slam.RemoteViewer.Network
             }
 
             var pointCloud = (PointCloudMessage)message;
+            if (pointCloud.Snapshot)
+            {
+                var ids = new HashSet<ulong>();
+                if (pointCloud.Update.Count != 0 || pointCloud.Remove.Count != 0)
+                {
+                    error = "snapshot requires empty update/remove arrays";
+                    return false;
+                }
+                foreach (PointEntry point in pointCloud.Add)
+                {
+                    if (!ids.Add(point.Id))
+                    {
+                        error = "snapshot contains duplicate point IDs";
+                        return false;
+                    }
+                }
+            }
             if (pointCloud.Version != 1 || !IsValidTimestamp(pointCloud.TimestampSeconds) ||
                 !AreFiniteEntries(pointCloud.Add) || !AreFiniteEntries(pointCloud.Update))
             {

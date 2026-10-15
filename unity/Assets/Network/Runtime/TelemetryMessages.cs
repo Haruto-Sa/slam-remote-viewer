@@ -191,7 +191,8 @@ namespace Slam.RemoteViewer.Network
             double t,
             IList<IList<double>> add,
             IList<IList<double>> update,
-            IList<ulong> remove)
+            IList<ulong> remove,
+            bool snapshot = false)
         {
             Version = v;
             Session = session;
@@ -200,6 +201,7 @@ namespace Slam.RemoteViewer.Network
             Add = ConvertEntries(add, "add");
             Update = ConvertEntries(update, "update");
             Remove = new ReadOnlyCollection<ulong>(new List<ulong>(remove ?? throw new JsonSerializationException("remove must not be null")));
+            Snapshot = snapshot;
         }
 
         public string Topic => TelemetryTopics.PointCloud;
@@ -225,6 +227,9 @@ namespace Slam.RemoteViewer.Network
 
         [JsonProperty("remove", Required = Required.Always)]
         public IReadOnlyList<ulong> Remove { get; }
+
+        [JsonProperty("snapshot", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool Snapshot { get; }
 
         private static ReadOnlyCollection<PointEntry> ConvertEntries(IList<IList<double>> values, string field)
         {

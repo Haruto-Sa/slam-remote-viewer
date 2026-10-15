@@ -4,6 +4,20 @@ namespace Slam.RemoteViewer.Network.Tests
 {
     public sealed class TelemetryParserTests
     {
+        internal const string Snapshot = "{\"v\":1,\"session\":\"test-session\",\"seq\":10,\"t\":1,\"snapshot\":true,\"add\":[[1,1,2,3]],\"update\":[],\"remove\":[]}";
+
+        [Test]
+        public void ParsesSnapshotAndRejectsMixedOrDuplicateOperations()
+        {
+            Assert.That(TelemetryParser.TryParse(TelemetryTopics.Settings,
+                UnitySettings.Replace("\"delta\"", "\"delta_snapshot\""), out _, out _), Is.True);
+            Assert.That(TelemetryParser.TryParse(TelemetryTopics.PointCloud, Snapshot, out var parsed, out _), Is.True);
+            Assert.That(((PointCloudMessage)parsed).Snapshot, Is.True);
+            Assert.That(TelemetryParser.TryParse(TelemetryTopics.PointCloud,
+                Snapshot.Replace("\"remove\":[]", "\"remove\":[2]"), out _, out _), Is.False);
+            Assert.That(TelemetryParser.TryParse(TelemetryTopics.PointCloud,
+                Snapshot.Replace("[[1,1,2,3]]", "[[1,1,2,3],[1,4,5,6]]"), out _, out _), Is.False);
+        }
         internal const string UnitySettings =
             "{\"v\":1,\"session\":\"test-session\",\"unit\":\"m\",\"frame\":\"unity_world\"," +
             "\"pose_convention\":\"Twc\",\"quaternion\":\"xyzw\",\"camera\":{" +

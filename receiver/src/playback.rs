@@ -185,6 +185,7 @@ pub fn load_session(directory: &Path) -> Result<LoadedSession, PlaybackError> {
     let mut pose_count = 0_u64;
     let mut pointcloud_message_count = 0_u64;
     let mut points = BTreeMap::new();
+    let mut gate = crate::recording::SessionGate::new();
 
     for (index, line) in reader.lines().enumerate() {
         let line_number = index + 1;
@@ -227,6 +228,10 @@ pub fn load_session(directory: &Path) -> Result<LoadedSession, PlaybackError> {
                     envelope.payload.get(),
                 )?;
                 validate_settings(&telemetry_path, line_number, &metadata, &settings)?;
+                gate.accept(&crate::protocol::TelemetryMessage::Settings(settings))
+                    .map_err(|error| {
+                        invalid_telemetry(&telemetry_path, line_number, error.to_string())
+                    })?;
                 (SETTINGS_TOPIC, None)
             }
             POSE_TOPIC => {
@@ -264,6 +269,12 @@ pub fn load_session(directory: &Path) -> Result<LoadedSession, PlaybackError> {
                     &metadata.session,
                     &pointcloud.session,
                 )?;
+                gate.accept(&crate::protocol::TelemetryMessage::PointCloud(
+                    pointcloud.clone(),
+                ))
+                .map_err(|error| {
+                    invalid_telemetry(&telemetry_path, line_number, error.to_string())
+                })?;
                 apply_delta(&mut points, &pointcloud);
                 pointcloud_message_count += 1;
                 (POINTCLOUD_TOPIC, Some(pointcloud.t))
@@ -393,11 +404,6 @@ fn validate_settings(
         ("frame", settings.frame.as_str(), "unity_world"),
         ("pose_convention", settings.pose_convention.as_str(), "Twc"),
         ("quaternion", settings.quaternion.as_str(), "xyzw"),
-        (
-            "pointcloud_mode",
-            settings.pointcloud_mode.as_str(),
-            "delta",
-        ),
     ];
     if settings.v != 1 {
         return Err(invalid_telemetry(
@@ -405,6 +411,9 @@ fn validate_settings(
             line,
             format!("unsupported protocol version: {}", settings.v),
         ));
+    }
+    if !crate::protocol::supported_pointcloud_mode(&settings.pointcloud_mode) {
+        return Err(invalid_telemetry(path, line, "unsupported pointcloud_mode"));
     }
     for (field, actual, expected) in fixed_values {
         if actual != expected {
@@ -490,6 +499,9 @@ fn parse_payload<T: serde::de::DeserializeOwned>(
 }
 
 fn apply_delta(points: &mut BTreeMap<u64, [f64; 3]>, delta: &PointCloudMessage) {
+    if delta.snapshot {
+        points.clear();
+    }
     for id in &delta.remove {
         points.remove(id);
     }

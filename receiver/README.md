@@ -21,6 +21,13 @@ See [`../docs/protocol.md`](../docs/protocol.md) for the Protocol v1 contract.
 
 ## Subscribed topics
 
+Receiver accepts both legacy `delta` point clouds and the opt-in
+`delta_snapshot` mode. Complete snapshots replace retained points in recordings,
+recovery, clips and replay, including clearing an empty map. The marker survives
+coordinate conversion and forwarding to Unity. See the
+[snapshot contract](../docs/protocol.md#complete-map-snapshot-extension).
+Upgrade Unity alongside Receiver before enabling snapshot-capable senders.
+
 The Subscriber registers the `slam/v1/` prefix and receives:
 
 - `slam/v1/settings`

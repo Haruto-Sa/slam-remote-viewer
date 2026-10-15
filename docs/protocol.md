@@ -88,7 +88,8 @@ Settings establish the interpretation of messages for one session.
 ```
 
 Required fixed values for v1 are `unit: "m"`, `pose_convention: "Twc"`,
-`quaternion: "xyzw"`, and `pointcloud_mode: "delta"`. The Sender emits
+`quaternion: "xyzw"`. `pointcloud_mode` is `"delta"` for legacy streams or
+`"delta_snapshot"` for streams supporting complete-map replacement below. The Sender emits
 `frame: "slam_world"`; after coordinate conversion, the Receiver emits
 `frame: "unity_world"`. `Twc` means the camera pose in the named world frame,
 not the world pose in camera coordinates.
@@ -151,6 +152,43 @@ For idempotent recovery from duplicated messages, updating an unknown ID acts
 as add, adding an existing ID acts as update, and removing an unknown ID is a
 no-op.
 
+### Complete-map snapshot extension
+
+Settings must advertise `pointcloud_mode: "delta_snapshot"` before a snapshot
+is sent. This mode retains ordinary deltas and adds an optional boolean
+`snapshot` field on the same point-cloud topic. Missing or false means the
+legacy delta behavior. True means replace the entire current session's map
+with `add`; `update` and `remove` must both be empty and `add` IDs must be unique.
+An empty `add` is a valid empty-map snapshot and clears all retained points.
+
+```json
+{
+  "v": 1, "session": "camera-a-session-002", "seq": 90, "t": 125.0,
+  "snapshot": true,
+  "add": [[1002, 0.2, 0.3, 1.5]], "update": [], "remove": []
+}
+```
+
+The message uses the same coordinate conversion, timestamp and increasing
+point-cloud sequence as deltas. It is one atomic multipart message, within
+the existing 16 MiB payload limit; incomplete chunks must never be treated as
+complete maps. Repeating a complete map at a newer sequence is harmless, and
+stale/duplicate point-cloud sequences in this mode are rejected by both
+Receiver and Unity ingress. Repeated settings for the same session do not
+reset this ordering guard.
+
+Upgrade Receiver and Unity before enabling the mode, and start with a fresh
+session ID. Older consumers reject the unknown settings mode, avoiding silent
+interpretation of replacements as incremental adds. Never announce legacy
+`delta` mode and then send snapshots. New consumers still accept legacy delta
+streams and recordings. Snapshot semantics apply to recording, recovery, clip
+state and playback as well as the live viewer.
+
+A snapshot replaces only one camera session's map; it does not align maps or
+reset pose/trajectory state. This consumer extension alone does not schedule
+snapshots: the sender resynchronization work under #107 must send settings and
+complete current state periodically for late/reconnecting viewers.
+
 ## Subscriber behavior
 
 The Receiver and Unity keep the last sequence number for each telemetry topic
@@ -162,6 +200,7 @@ Telemetry received before valid settings for its session is ignored. Invalid
 messages must not terminate the process; they are counted and logged with the
 topic and reason, without logging an entire large payload.
 
-Version 1 does not guarantee delivery or provide a point-cloud snapshot. If
-delta loss proves significant in testing, a snapshot/control socket will be
-introduced as a later protocol extension rather than changing v1 semantics.
+Delivery remains best effort. Legacy `delta` streams cannot reconstruct a full
+map after missed operations. The opt-in `delta_snapshot` extension permits
+recovery after a later complete snapshot is received, but adds no delivery
+acknowledgments or historical pose/trajectory replay.

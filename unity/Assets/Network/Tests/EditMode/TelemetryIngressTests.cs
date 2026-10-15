@@ -5,6 +5,18 @@ namespace Slam.RemoteViewer.Network.Tests
     public sealed class TelemetryIngressTests
     {
         [Test]
+        public void RequiresSnapshotModeBeforeAcceptingSnapshots()
+        {
+            var ingress = new TelemetryIngress(new BoundedMessageQueue<ITelemetryMessage>(4));
+            ingress.TryAccept(TelemetryTopics.Settings, TelemetryParserTests.UnitySettings);
+            Assert.That(ingress.TryAccept(TelemetryTopics.PointCloud, TelemetryParserTests.Snapshot), Is.False);
+            ingress.TryAccept(TelemetryTopics.Settings, TelemetryParserTests.UnitySettings.Replace("\"delta\"", "\"delta_snapshot\""));
+            Assert.That(ingress.TryAccept(TelemetryTopics.PointCloud, TelemetryParserTests.Snapshot), Is.True);
+            ingress.TryAccept(TelemetryTopics.Settings, TelemetryParserTests.UnitySettings.Replace("\"delta\"", "\"delta_snapshot\""));
+            Assert.That(ingress.TryAccept(TelemetryTopics.PointCloud, TelemetryParserTests.Snapshot), Is.False);
+            Assert.That(ingress.TryAccept(TelemetryTopics.PointCloud, TelemetryParserTests.Snapshot.Replace("\"seq\":10", "\"seq\":11")), Is.True);
+        }
+        [Test]
         public void RejectsTelemetryUntilMatchingSettingsArrive()
         {
             var queue = new BoundedMessageQueue<ITelemetryMessage>(4);
