@@ -185,9 +185,12 @@ streams and recordings. Snapshot semantics apply to recording, recovery, clip
 state and playback as well as the live viewer.
 
 A snapshot replaces only one camera session's map; it does not align maps or
-reset pose/trajectory state. This consumer extension alone does not schedule
-snapshots: the sender resynchronization work under #107 must send settings and
-complete current state periodically for late/reconnecting viewers.
+reset pose/trajectory state. The live Rust sender enables this mode with
+`--pointcloud-snapshots` and repeats settings followed by the retained complete
+map every five seconds, including while the local producer is idle. The option
+is off by default. The sender retains at most 100,000 points and rejects
+oversized snapshots rather than splitting or truncating a complete map. See the
+Sender README for launch and multi-camera endpoint isolation.
 
 ## Subscriber behavior
 

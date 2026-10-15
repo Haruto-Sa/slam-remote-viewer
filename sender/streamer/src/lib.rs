@@ -188,9 +188,15 @@ pub struct PointCloudDeltaMessage {
     pub session: String,
     pub seq: u64,
     pub t: f64,
+    #[serde(skip_serializing_if = "is_false")]
+    pub snapshot: bool,
     pub add: Vec<MapPoint>,
     pub update: Vec<MapPoint>,
     pub remove: Vec<u64>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl PointCloudDeltaMessage {
@@ -214,6 +220,7 @@ impl PointCloudDeltaMessage {
             session: session.into(),
             seq,
             t: delta.timestamp_seconds,
+            snapshot: false,
             add: delta.add.into_iter().map(convert_point).collect(),
             update: delta.update.into_iter().map(convert_point).collect(),
             remove: delta.remove,
@@ -226,6 +233,7 @@ impl PointCloudDeltaMessage {
             session: session.into(),
             seq,
             t: time_sec,
+            snapshot: false,
             add: vec![MapPoint(1001, 0.1, 0.2, 1.4), MapPoint(1002, 0.2, 0.3, 1.5)],
             update: Vec::new(),
             remove: Vec::new(),

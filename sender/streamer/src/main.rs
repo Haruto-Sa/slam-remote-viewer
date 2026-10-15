@@ -51,6 +51,9 @@ struct Cli {
     /// Pose input backend.
     #[arg(long, value_enum, default_value_t = SourceKind::Mock)]
     source: SourceKind,
+    /// Repeat complete live maps every 5s; requires snapshot-capable Receiver and Unity.
+    #[arg(long)]
+    pointcloud_snapshots: bool,
     /// Unix socket listened on when --source live.
     #[arg(long, default_value = DEFAULT_SLAM_SOCKET)]
     slam_socket: PathBuf,
@@ -139,6 +142,9 @@ fn parse_non_empty_string(value: &str) -> Result<String, String> {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
+    if cli.pointcloud_snapshots && cli.source != SourceKind::Live {
+        return Err("--pointcloud-snapshots requires --source live".into());
+    }
     match cli.source {
         SourceKind::Mock => run_mock(cli),
         SourceKind::Live => run_live(cli),
@@ -284,7 +290,11 @@ fn run_live(cli: Cli) -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let mut live_publisher = LiveProtocolPublisher::default();
+    let mut live_publisher = if cli.pointcloud_snapshots {
+        LiveProtocolPublisher::with_snapshots()
+    } else {
+        LiveProtocolPublisher::default()
+    };
 
     while running.load(Ordering::SeqCst) {
         match event_receiver.recv_timeout(Duration::from_millis(100)) {
@@ -319,10 +329,11 @@ fn run_live(cli: Cli) -> Result<(), Box<dyn Error>> {
         .map_err(|_| "live SLAM interrupt lock poisoned")?
         .take();
     println!(
-        "live sender stopped: poses={}, pointclouds={}, skipped_without_pose={}",
+        "live sender stopped: poses={}, pointclouds={}, skipped_without_pose={}, snapshots={}",
         live_publisher.poses_published(),
         live_publisher.pointclouds_published(),
-        live_publisher.skipped_without_pose()
+        live_publisher.skipped_without_pose(),
+        live_publisher.snapshots_published()
     );
     Ok(())
 }
@@ -337,6 +348,7 @@ mod tests {
 
         assert_eq!(cli.endpoint, DEFAULT_ENDPOINT);
         assert_eq!(cli.source, SourceKind::Mock);
+        assert!(!cli.pointcloud_snapshots);
         assert_eq!(cli.slam_socket, PathBuf::from(DEFAULT_SLAM_SOCKET));
         assert_eq!(cli.session, DEFAULT_SESSION);
         assert_eq!(cli.pose_rate_hz, POSE_RATE_HZ);
@@ -390,12 +402,14 @@ mod tests {
             "slam-mock-sender",
             "--source",
             "live",
+            "--pointcloud-snapshots",
             "--slam-socket",
             "/private/tmp/test-live.sock",
         ])
         .expect("live source arguments must parse");
 
         assert_eq!(cli.source, SourceKind::Live);
+        assert!(cli.pointcloud_snapshots);
         assert_eq!(
             cli.slam_socket,
             PathBuf::from("/private/tmp/test-live.sock")
