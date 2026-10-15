@@ -91,6 +91,57 @@ with an error instead of sending invalid telemetry.
 
 ## Launch the complete macOS sender
 
+### Recover maps on late or reconnected viewers
+
+After upgrading Receiver and Unity to support `delta_snapshot` (PR #115), start
+a fresh session and add `--pointcloud-snapshots` to the live Rust Sender:
+
+```bash
+cargo run --manifest-path sender/streamer/Cargo.toml --bin slam-mock-sender -- \
+  --source live --pointcloud-snapshots \
+  --slam-socket /private/tmp/camera-a.sock --endpoint 'tcp://*:5555'
+```
+
+The `macos_live_sender` CLI forwards the same flag to its streamer child. For
+phone capture, enable it on the separate Rust streamer before starting the
+HTTPS camera host. The native macOS control window does not yet expose this
+option; use the CLI workflow for snapshot recovery.
+
+This mode retains up to 100,000 points from the reliable local producer stream.
+Every five seconds, including when the producer is idle, it sends settings and
+then one complete snapshot with IDs sorted. Deltas continue between snapshots.
+Both use a shared increasing point-cloud sequence; snapshots retain the most
+recent point-cloud timestamp (zero before any point delta). A complete empty map
+is sent when all points have disappeared. Snapshots contain no pose history and
+do not reset trajectories. An excessive map or a snapshot exceeding the existing
+16 MiB wire limit stops the sender with an error; points are never silently
+truncated into an incomplete snapshot.
+
+Recovery requires receipt of matching settings and a subsequent snapshot.
+ZeroMQ delivery is still best effort, so five seconds is the normal repeat
+interval, not a network deadline or delivery guarantee. Recovery broadcasts end
+when the producer session ends. The default remains legacy `delta` mode, with no
+retained map and no snapshots. The flag is only supported with `--source live`.
+
+For two cameras, use distinct camera/session IDs, Unix sockets and publishing
+ports. On each viewer device, connect its Receiver to the selected camera's
+endpoint and Unity to that Receiver. The same point ID can exist independently
+in both cameras; no coordinate alignment or map merging is performed. Connecting
+one Receiver indiscriminately to multiple independent senders is unsupported.
+
+The process integration test runs the real sender and two software clients using
+the production Receiver parser, session gate, coordinate conversion and recording
+code. It verifies that a late client receives a complete map after missed adds,
+updates and removals, and a reconnected client clears a stale map after missing
+the removals of every point. No producer messages are needed for the recovery
+ticks. Physical multiple-Unity-device checks remain tracked under #107.
+
+```bash
+cargo test --manifest-path sender/streamer/Cargo.toml --test snapshot_resync
+```
+
+### macOS launcher
+
 `macos_live_sender` starts the Rust live streamer, waits up to a bounded timeout
 for its Unix socket, then starts the existing ORB-SLAM3 camera producer. The
 producer runs continuously and opens its local diagnostics window by default:

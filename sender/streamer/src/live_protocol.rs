@@ -1,25 +1,45 @@
 use std::{
+    collections::BTreeMap,
     error::Error,
     fmt,
     time::{Duration, Instant},
 };
 
 use crate::{
-    POINTCLOUD_TOPIC, POSE_TOPIC, PointCloudDeltaMessage, PoseMessage, PublishError,
-    SETTINGS_TOPIC, SettingsMessage, live_slam_input::LiveSlamEvent, publish_json,
+    MapPoint, POINTCLOUD_TOPIC, POSE_TOPIC, PointCloudDeltaMessage, PoseMessage, PublishError,
+    SETTINGS_TOPIC, SettingsMessage,
+    live_slam_input::{LivePointCloudDelta, LiveSlamEvent},
+    publish_json,
 };
 
 const SETTINGS_INTERVAL: Duration = Duration::from_secs(5);
+const MAX_RETAINED_POINTS: usize = 100_000;
+const MAX_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum LiveProtocolError {
     Publish(PublishError),
     TelemetryBeforeSettings,
+    SessionAlreadyStarted,
+    MapLimitExceeded,
+    SnapshotTooLarge,
 }
 
 impl fmt::Display for LiveProtocolError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::SessionAlreadyStarted => write!(
+                formatter,
+                "live publisher already has a session; create a new publisher for each producer"
+            ),
+            Self::MapLimitExceeded => write!(
+                formatter,
+                "live map exceeds {MAX_RETAINED_POINTS} retained points"
+            ),
+            Self::SnapshotTooLarge => write!(
+                formatter,
+                "complete map exceeds the {MAX_SNAPSHOT_BYTES}-byte protocol payload limit"
+            ),
             Self::Publish(error) => error.fmt(formatter),
             Self::TelemetryBeforeSettings => {
                 write!(formatter, "live telemetry arrived before session settings")
@@ -32,7 +52,7 @@ impl Error for LiveProtocolError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Publish(error) => Some(error),
-            Self::TelemetryBeforeSettings => None,
+            _ => None,
         }
     }
 }
@@ -50,9 +70,70 @@ pub struct LiveProtocolPublisher {
     poses_published: u64,
     pointclouds_published: u64,
     skipped_without_pose: u64,
+    snapshots_enabled: bool,
+    snapshots_published: u64,
+    retained_points: BTreeMap<u64, [f64; 3]>,
+    pointcloud_timestamp: f64,
 }
 
 impl LiveProtocolPublisher {
+    pub fn with_snapshots() -> Self {
+        Self {
+            snapshots_enabled: true,
+            ..Self::default()
+        }
+    }
+
+    fn updated_map(
+        &self,
+        delta: &LivePointCloudDelta,
+    ) -> Result<BTreeMap<u64, [f64; 3]>, LiveProtocolError> {
+        let mut points = self.retained_points.clone();
+        for id in &delta.remove {
+            points.remove(id);
+        }
+        for point in delta.update.iter().chain(&delta.add) {
+            if !points.contains_key(&point.id) && points.len() == MAX_RETAINED_POINTS {
+                return Err(LiveProtocolError::MapLimitExceeded);
+            }
+            points.insert(point.id, point.position);
+        }
+        Ok(points)
+    }
+
+    fn publish_snapshot(&mut self, socket: &zmq::Socket) -> Result<(), LiveProtocolError> {
+        let settings = self
+            .settings
+            .as_ref()
+            .ok_or(LiveProtocolError::TelemetryBeforeSettings)?;
+        let snapshot = PointCloudDeltaMessage {
+            v: crate::PROTOCOL_VERSION,
+            session: settings.session.clone(),
+            seq: self.pointclouds_published,
+            t: self.pointcloud_timestamp,
+            snapshot: true,
+            add: self
+                .retained_points
+                .iter()
+                .map(|(&id, p)| MapPoint(id, p[0], p[1], p[2]))
+                .collect(),
+            update: Vec::new(),
+            remove: Vec::new(),
+        };
+        let payload = serde_json::to_vec(&snapshot).map_err(PublishError::from)?;
+        if payload.len() > MAX_SNAPSHOT_BYTES {
+            return Err(LiveProtocolError::SnapshotTooLarge);
+        }
+        socket
+            .send_multipart([POINTCLOUD_TOPIC.as_bytes(), payload.as_slice()], 0)
+            .map_err(PublishError::from)?;
+        self.pointclouds_published += 1;
+        self.snapshots_published += 1;
+        Ok(())
+    }
+
+    /// Repeats settings and, when enabled, the complete retained map. Call on
+    /// the live event loop's idle timeout as well as before processing events.
     pub fn publish_due_settings(
         &mut self,
         socket: &zmq::Socket,
@@ -64,6 +145,9 @@ impl LiveProtocolPublisher {
                 .as_ref()
                 .ok_or(LiveProtocolError::TelemetryBeforeSettings)?;
             publish_json(socket, SETTINGS_TOPIC, settings)?;
+            if self.snapshots_enabled {
+                self.publish_snapshot(socket)?;
+            }
             self.next_settings = Some(now + SETTINGS_INTERVAL);
         }
         Ok(())
@@ -81,7 +165,10 @@ impl LiveProtocolPublisher {
                 producer: _,
                 camera,
             } => {
-                let settings = SettingsMessage::live(
+                if self.settings.is_some() {
+                    return Err(LiveProtocolError::SessionAlreadyStarted);
+                }
+                let mut settings = SettingsMessage::live(
                     session_id,
                     camera.camera_type,
                     camera.id,
@@ -89,6 +176,9 @@ impl LiveProtocolPublisher {
                     camera.height,
                     camera.fps,
                 );
+                if self.snapshots_enabled {
+                    settings.pointcloud_mode = "delta_snapshot".into();
+                }
                 publish_json(socket, SETTINGS_TOPIC, &settings)?;
                 self.settings = Some(settings);
                 self.next_settings = Some(now + SETTINGS_INTERVAL);
@@ -109,6 +199,12 @@ impl LiveProtocolPublisher {
             }
             LiveSlamEvent::PointCloudDelta(delta) => {
                 self.publish_due_settings(socket, now)?;
+                let updated = if self.snapshots_enabled {
+                    Some(self.updated_map(&delta)?)
+                } else {
+                    None
+                };
+                let timestamp = delta.timestamp_seconds;
                 let settings = self
                     .settings
                     .as_ref()
@@ -119,6 +215,10 @@ impl LiveProtocolPublisher {
                     delta,
                 );
                 publish_json(socket, POINTCLOUD_TOPIC, &message)?;
+                if let Some(points) = updated {
+                    self.retained_points = points;
+                    self.pointcloud_timestamp = timestamp;
+                }
                 self.pointclouds_published += 1;
             }
             LiveSlamEvent::SessionEnded { .. } => return Ok(true),
@@ -136,6 +236,10 @@ impl LiveProtocolPublisher {
 
     pub fn pointclouds_published(&self) -> u64 {
         self.pointclouds_published
+    }
+
+    pub fn snapshots_published(&self) -> u64 {
+        self.snapshots_published
     }
 }
 
@@ -159,6 +263,200 @@ mod tests {
                 fps: 30,
             },
         }
+    }
+
+    fn cloud(
+        add: Vec<SlamMapPoint>,
+        update: Vec<SlamMapPoint>,
+        remove: Vec<u64>,
+    ) -> LivePointCloudDelta {
+        LivePointCloudDelta {
+            frame_id: 1,
+            timestamp_seconds: 2.5,
+            add,
+            update,
+            remove,
+        }
+    }
+
+    #[test]
+    fn repeats_complete_sorted_maps_and_empty_maps_on_idle_ticks() {
+        let context = zmq::Context::new();
+        let publisher = context.socket(zmq::PAIR).unwrap();
+        let subscriber = context.socket(zmq::PAIR).unwrap();
+        publisher.bind("inproc://snapshot-unit").unwrap();
+        subscriber.connect("inproc://snapshot-unit").unwrap();
+        subscriber.set_rcvtimeo(1000).unwrap();
+        let receive = || {
+            let frames = subscriber.recv_multipart(0).unwrap();
+            (
+                String::from_utf8(frames[0].clone()).unwrap(),
+                serde_json::from_slice::<serde_json::Value>(&frames[1]).unwrap(),
+            )
+        };
+        let now = Instant::now();
+        let mut adapter = LiveProtocolPublisher::with_snapshots();
+        adapter
+            .handle_event(&publisher, session_started(), now)
+            .unwrap();
+        assert_eq!(receive().1["pointcloud_mode"], "delta_snapshot");
+        adapter
+            .handle_event(
+                &publisher,
+                LiveSlamEvent::PointCloudDelta(cloud(
+                    vec![
+                        SlamMapPoint {
+                            id: 9,
+                            position: [9.0, 0.0, 0.0],
+                        },
+                        SlamMapPoint {
+                            id: 2,
+                            position: [2.0, 0.0, 0.0],
+                        },
+                    ],
+                    vec![],
+                    vec![],
+                )),
+                now,
+            )
+            .unwrap();
+        assert_eq!(receive().1["seq"], 0);
+        adapter
+            .publish_due_settings(&publisher, now + SETTINGS_INTERVAL)
+            .unwrap();
+        assert_eq!(receive().0, SETTINGS_TOPIC);
+        let snapshot = receive().1;
+        assert_eq!(snapshot["snapshot"], true);
+        assert_eq!(snapshot["seq"], 1);
+        assert_eq!(snapshot["t"], 2.5);
+        assert_eq!(
+            snapshot["add"],
+            serde_json::json!([[2, 2.0, 0.0, 0.0], [9, 9.0, 0.0, 0.0]])
+        );
+        adapter
+            .handle_event(
+                &publisher,
+                LiveSlamEvent::PointCloudDelta(cloud(vec![], vec![], vec![2, 9])),
+                now + SETTINGS_INTERVAL,
+            )
+            .unwrap();
+        assert_eq!(receive().1["seq"], 2);
+        adapter
+            .publish_due_settings(&publisher, now + 2 * SETTINGS_INTERVAL)
+            .unwrap();
+        assert_eq!(receive().0, SETTINGS_TOPIC);
+        let empty = receive().1;
+        assert_eq!(empty["seq"], 3);
+        assert_eq!(empty["add"], serde_json::json!([]));
+        assert_eq!(empty["snapshot"], true);
+        assert_eq!(adapter.snapshots_published(), 2);
+        assert!(matches!(
+            adapter.handle_event(&publisher, session_started(), now),
+            Err(LiveProtocolError::SessionAlreadyStarted)
+        ));
+    }
+
+    #[test]
+    fn rejects_map_overflow_without_changing_retained_state() {
+        let mut adapter = LiveProtocolPublisher::with_snapshots();
+        adapter.retained_points = (0..MAX_RETAINED_POINTS as u64)
+            .map(|id| (id, [0.0; 3]))
+            .collect();
+        let overflow = cloud(
+            vec![SlamMapPoint {
+                id: MAX_RETAINED_POINTS as u64,
+                position: [1.0; 3],
+            }],
+            vec![],
+            vec![],
+        );
+        assert!(matches!(
+            adapter.updated_map(&overflow),
+            Err(LiveProtocolError::MapLimitExceeded)
+        ));
+        assert_eq!(adapter.retained_points.len(), MAX_RETAINED_POINTS);
+        assert!(
+            !adapter
+                .retained_points
+                .contains_key(&(MAX_RETAINED_POINTS as u64))
+        );
+        let replacement = cloud(overflow.add, vec![], vec![0]);
+        let next = adapter.updated_map(&replacement).unwrap();
+        assert_eq!(next.len(), MAX_RETAINED_POINTS);
+        assert!(!next.contains_key(&0));
+        assert!(adapter.retained_points.contains_key(&0));
+    }
+
+    #[test]
+    fn separate_publishers_keep_overlapping_point_ids_in_separate_sessions() {
+        let context = zmq::Context::new();
+        let socket = context.socket(zmq::PAIR).unwrap();
+        let subscriber = context.socket(zmq::PAIR).unwrap();
+        socket.bind("inproc://independent-camera-maps").unwrap();
+        subscriber
+            .connect("inproc://independent-camera-maps")
+            .unwrap();
+        subscriber.set_rcvtimeo(1000).unwrap();
+        let now = Instant::now();
+        let mut cameras = [
+            LiveProtocolPublisher::with_snapshots(),
+            LiveProtocolPublisher::with_snapshots(),
+        ];
+        for (index, camera) in cameras.iter_mut().enumerate() {
+            let mut hello = session_started();
+            if let LiveSlamEvent::SessionStarted {
+                session_id, camera, ..
+            } = &mut hello
+            {
+                *session_id = format!("session-{index}");
+                camera.id = format!("camera-{index}");
+            }
+            camera.handle_event(&socket, hello, now).unwrap();
+            subscriber.recv_multipart(0).unwrap();
+            camera
+                .handle_event(
+                    &socket,
+                    LiveSlamEvent::PointCloudDelta(cloud(
+                        vec![SlamMapPoint {
+                            id: 1,
+                            position: [index as f64, 0.0, 0.0],
+                        }],
+                        vec![],
+                        vec![],
+                    )),
+                    now,
+                )
+                .unwrap();
+            subscriber.recv_multipart(0).unwrap();
+        }
+        for (index, camera) in cameras.iter_mut().enumerate() {
+            camera
+                .publish_due_settings(&socket, now + SETTINGS_INTERVAL)
+                .unwrap();
+            let settings = subscriber.recv_multipart(0).unwrap();
+            let settings: serde_json::Value = serde_json::from_slice(&settings[1]).unwrap();
+            assert_eq!(settings["camera"]["id"], format!("camera-{index}"));
+            let frames = subscriber.recv_multipart(0).unwrap();
+            let snapshot: serde_json::Value = serde_json::from_slice(&frames[1]).unwrap();
+            assert_eq!(snapshot["session"], format!("session-{index}"));
+            assert_eq!(
+                snapshot["add"],
+                serde_json::json!([[1, index as f64, 0.0, 0.0]])
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_oversized_snapshot_payload_without_publishing_partial_map() {
+        let context = zmq::Context::new();
+        let publisher = context.socket(zmq::PUB).unwrap();
+        let mut adapter = LiveProtocolPublisher::with_snapshots();
+        adapter.settings = Some(SettingsMessage::mock("s".repeat(MAX_SNAPSHOT_BYTES)));
+        assert!(matches!(
+            adapter.publish_snapshot(&publisher),
+            Err(LiveProtocolError::SnapshotTooLarge)
+        ));
+        assert_eq!(adapter.pointclouds_published(), 0);
     }
 
     #[test]

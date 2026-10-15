@@ -503,6 +503,18 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "slam-receiver",
+ "zmq",
+]
+
+[[package]]
+name = "slam-receiver"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "serde",
+ "serde_json",
  "zmq",
 ]
 

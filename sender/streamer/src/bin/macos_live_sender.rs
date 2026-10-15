@@ -62,6 +62,9 @@ struct Cli {
     /// Do not open the producer diagnostics window.
     #[arg(long)]
     headless: bool,
+    /// Enable complete map recovery for updated Receiver/Unity clients.
+    #[arg(long)]
+    pointcloud_snapshots: bool,
 }
 
 #[derive(Debug)]
@@ -117,7 +120,7 @@ impl Cli {
         if !self.headless {
             producer_args.push("--diagnostics".into());
         }
-        LaunchCommands {
+        let mut commands = LaunchCommands {
             streamer_program: self.streamer.clone(),
             streamer_args: vec![
                 "--source".into(),
@@ -129,7 +132,11 @@ impl Cli {
             ],
             producer_program: self.producer.clone(),
             producer_args,
+        };
+        if self.pointcloud_snapshots {
+            commands.streamer_args.push("--pointcloud-snapshots".into());
         }
+        commands
     }
 }
 
@@ -406,6 +413,23 @@ mod tests {
             !cli.commands()
                 .producer_args
                 .contains(&"--diagnostics".into())
+        );
+    }
+
+    #[test]
+    fn snapshot_option_is_forwarded_only_to_streamer() {
+        let mut cli = cli();
+        cli.pointcloud_snapshots = true;
+        let commands = cli.commands();
+        assert!(
+            commands
+                .streamer_args
+                .contains(&"--pointcloud-snapshots".into())
+        );
+        assert!(
+            !commands
+                .producer_args
+                .contains(&"--pointcloud-snapshots".into())
         );
     }
 
