@@ -2,8 +2,9 @@
 
 This is the host input stage for smartphone capture (#106, #110). It accepts
 real image frames and runs ORB-SLAM3, without AVFoundation or a host webcam.
-The phone capture client and HTTPS ingress are follow-up work; this stage alone
-does not establish working smartphone capture or phone-to-Unity validation.
+The [phone capture client and HTTPS ingress](../sender/phone/README.md) feed this
+format from the browser. Physical phone-to-Unity validation is a separate check;
+a host dataset replay does not establish it.
 
 ## Local pipe format (SLF1)
 

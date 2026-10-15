@@ -1,0 +1,15 @@
+:root { color-scheme: dark; font: 17px system-ui, sans-serif; background: #111b26; color: #eff4fa; }
+body { margin: 0; }
+main { max-width: 640px; margin: auto; padding: 24px; }
+h1 { font-size: 2rem; margin-top: 0; }
+p { line-height: 1.5; }
+label { display: block; margin: 18px 0 8px; }
+input, select, button { box-sizing: border-box; font: inherit; padding: 12px; border-radius: 8px; border: 1px solid #8498ae; }
+input, select { width: 100%; background: #1d2c3e; color: inherit; }
+button { margin-top: 12px; background: #c2e0ff; color: #10263d; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.actions { display: flex; gap: 12px; }
+.actions button { flex: 1; }
+video { width: 100%; max-height: 65vh; background: #080d13; object-fit: contain; border-radius: 8px; }
+#status { padding: 12px; border-left: 3px solid #93c8ff; overflow-wrap: anywhere; }
+#details { font-size: .85rem; overflow-wrap: anywhere; }

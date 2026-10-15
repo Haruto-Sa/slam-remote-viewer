@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SLAM camera</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/capture.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>SLAM camera</h1>
+    <p>Send this camera to your SLAM host. Keep the phone orientation and lens fixed while capturing.</p>
+    <label for="token">Pairing token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false">
+    <label for="camera">Camera</label>
+    <select id="camera"><option value="">Rear camera (default)</option></select>
+    <button id="discover" type="button">Choose from available cameras</button>
+    <div class="actions">
+      <button id="calibrate" type="button">Calibration preview</button>
+      <button id="save" type="button" disabled>Save calibration image</button>
+    </div>
+    <div class="actions">
+      <button id="start" type="button">Start camera</button>
+      <button id="stop" type="button" disabled>Stop</button>
+    </div>
+    <p id="status" role="status" aria-live="polite">Open the pairing link printed by your host.</p>
+    <p id="details"></p>
+    <video id="preview" muted playsinline autoplay></video>
+    <p>After stopping or disconnecting, restart the host and streamer to start a new session. Monocular distances have unknown scale without an external reference.</p>
+  </main>
+</body>
+</html>
