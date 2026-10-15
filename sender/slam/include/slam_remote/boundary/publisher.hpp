@@ -21,6 +21,7 @@ struct CameraInfo final {
     std::uint32_t width;
     std::uint32_t height;
     std::uint32_t fps;
+    std::string camera_type{"monocular"};
 };
 
 struct PublisherConfig final {

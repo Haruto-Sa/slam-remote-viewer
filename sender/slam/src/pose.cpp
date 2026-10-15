@@ -97,6 +97,12 @@ std::array<double, 4> RotationToQuaternion(const std::array<double, 9>& rotation
 
 }  // namespace
 
+CameraPose ConvertTwcToPose(const RigidTransform& world_from_camera) {
+    RequireFinite(world_from_camera);
+    return {world_from_camera.translation_metres,
+            RotationToQuaternion(world_from_camera.rotation)};
+}
+
 CameraPose ConvertTcwToTwc(const RigidTransform& camera_from_world) {
     RequireFinite(camera_from_world);
     const auto& source = camera_from_world.rotation;

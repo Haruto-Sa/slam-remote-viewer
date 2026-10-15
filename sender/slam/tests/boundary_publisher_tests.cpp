@@ -61,6 +61,19 @@ void TestSerializationAndValidation() {
           "hello type must be serialized");
     Check(hello.find("\"camera_type\":\"monocular\"") != std::string::npos,
           "monocular camera type must be serialized");
+    CameraInfo rgbd_camera = camera;
+    rgbd_camera.camera_type = "rgbd";
+    Check(slam_remote::boundary::SerializeHello("s", "rtabmap-rgbd", rgbd_camera)
+              .find("\"camera_type\":\"rgbd\"") != std::string::npos,
+          "RGB-D camera metadata must not be mislabeled monocular");
+    rgbd_camera.camera_type.clear();
+    bool empty_type_rejected = false;
+    try {
+        static_cast<void>(slam_remote::boundary::SerializeHello("s", "rtabmap", rgbd_camera));
+    } catch (const std::invalid_argument&) {
+        empty_type_rejected = true;
+    }
+    Check(empty_type_rejected, "empty camera type must be rejected");
 
     const auto origin = std::chrono::seconds(4);
     const TrackingResult tracked{

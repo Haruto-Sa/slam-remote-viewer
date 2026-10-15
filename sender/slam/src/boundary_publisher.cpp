@@ -159,6 +159,7 @@ std::string SerializeHello(std::string_view session_id, std::string_view produce
     RequireText(session_id, "session_id");
     RequireText(producer, "producer");
     RequireText(camera.id, "camera.id");
+    RequireText(camera.camera_type, "camera.camera_type");
     if (camera.width == 0 || camera.height == 0 || camera.fps == 0) {
         throw std::invalid_argument("camera dimensions and fps must be positive");
     }
@@ -166,7 +167,7 @@ std::string SerializeHello(std::string_view session_id, std::string_view produce
     output.imbue(std::locale::classic());
     output << "{\"type\":\"hello\",\"boundary_version\":1,\"session_id\":"
            << JsonString(session_id) << ",\"producer\":" << JsonString(producer)
-           << ",\"camera\":{\"camera_type\":\"monocular\",\"id\":"
+           << ",\"camera\":{\"camera_type\":" << JsonString(camera.camera_type) << ",\"id\":"
            << JsonString(camera.id) << ",\"width\":" << camera.width
            << ",\"height\":" << camera.height << ",\"fps\":" << camera.fps
            << "}}";
