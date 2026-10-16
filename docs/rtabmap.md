@@ -2,7 +2,7 @@
 
 Tracked in [#108](https://github.com/Haruto-Sa/slam-remote-viewer/issues/108).
 This backend is not yet release-ready. Pose-accuracy and end-to-end viewer
-verification, live camera capture, installation automation and independent
+verification, live camera capture and independent
 review remain outstanding. The default ORB-SLAM3 workflow is unchanged.
 
 ## Backend choice
@@ -58,6 +58,67 @@ does not describe an entire dependency environment.
 
 ## Optional build and dataset entry point
 
+### Apple Silicon camera-side PC setup
+
+From a native arm64 terminal, with Xcode command-line tools, Git and conda
+already installed:
+
+```sh
+bash tools/bootstrap-rtabmap-macos.sh
+```
+
+If conda is installed elsewhere:
+
+```sh
+SLAM_CONDA_EXE=/absolute/path/to/conda \
+  bash tools/bootstrap-rtabmap-macos.sh
+```
+
+The script uses a dedicated `/private/tmp/slam-remote-viewer-rtabmap` directory
+and does not modify the existing ORB-SLAM3 environment. Set `SLAM_RTAB_WORK_ROOT`
+to another dedicated temporary subdirectory if needed. `SLAM_BUILD_JOBS` accepts
+1–32, defaulting to 4. Expect a substantial dependency download and several GB
+of disk space; PCL/OpenCV pull transitive packages even though the RTAB-Map GUI
+and physical camera SDKs are disabled in this build. Temporary files may be
+removed by the operating system, so this is not a permanent application install.
+
+The script checks the upstream commit, installs pinned primary dependency
+versions in `env/`, builds RTAB-Map into `install/`, builds the sender in
+`sender/`, runs native tests and checks `rtabmap_rgbd_sender --help`. Existing
+source trees with changes or a different revision are rejected rather than
+reset. Re-running can update dependency build variants within the pinned
+versions; `conda-explicit.txt` records the exact resolved transitive packages.
+This is not a bit-for-bit reproducibility guarantee.
+
+The resulting executable is:
+
+```text
+/private/tmp/slam-remote-viewer-rtabmap/sender/rtabmap_rgbd_sender
+```
+
+To verify real image-pair input, use this executable with the dataset test below.
+Bootstrap success itself does not prove camera capture, pose accuracy or Unity
+rendering. No RGB-D device is accessed during installation.
+This setup builds the RTAB-Map CLI; it does not add RTAB-Map selection to the
+existing native macOS launcher UI.
+
+Verification on the development Mac: a newly created dedicated dependency
+environment, followed by a bootstrap rerun, completed the library/sender build,
+all 13 native tests and executable startup. The resulting executable also
+passed the full 794-pair dataset boundary test (794 poses, 111 point-cloud
+messages). Six bootstrap preflight tests cover invalid arguments, unsafe roots,
+missing conda, existing source preservation and dependency symlink protection:
+
+```sh
+python3 -m unittest discover -s tools -p test_bootstrap_rtabmap.py
+```
+
+Apple Silicon-specific checks are skipped on other hardware. First loading of
+the real-library test took about 100 seconds on this host; the native test
+timeout is 180 seconds.
+
+### Manual / existing RTAB-Map installation
+
 After installing RTAB-Map with GTSAM into an isolated prefix:
 
 ```sh
@@ -76,8 +137,8 @@ can succeed while executables fail to locate OpenCV or conda's C++ runtime.
 The verified source-build configuration uses OpenCV 4.13.0, PCL 1.15.1, Eigen
 3.4.0, GTSAM 4.2.0 and CMake 3.31.8. RTAB-Map itself additionally needed the
 dependency prefix in `CMAKE_SHARED_LINKER_FLAGS`, and explicit SDK pthread
-include/library paths on this host. Reproducible bootstrap automation is still
-pending; this is not yet a one-command installation guide.
+include/library paths on this host. The Apple Silicon bootstrap above includes
+these settings; a manual build must supply equivalent dependency paths.
 
 The current entry point is `rtabmap_rgbd_sender --help`. It accepts an association
 file (`rgb_timestamp rgb_path depth_timestamp depth_path`), a Rust-owned Unix
