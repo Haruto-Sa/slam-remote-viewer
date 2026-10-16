@@ -32,6 +32,9 @@ struct RigidTransform final {
 /// Convert ORB-SLAM3's world-to-camera Tcw into canonical camera-to-world Twc.
 CameraPose ConvertTcwToTwc(const RigidTransform& camera_from_world);
 
+/// Validate an already camera-to-world transform without inverting it.
+CameraPose ConvertTwcToPose(const RigidTransform& world_from_camera);
+
 /// Preserve capture metadata and expose a pose only while tracking is valid.
 TrackingResult MakeTrackingResult(const camera::ImageFrame& frame, TrackingState state,
                                   const std::optional<RigidTransform>& camera_from_world);

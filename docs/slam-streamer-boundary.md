@@ -55,6 +55,16 @@ within each message type; the point-cloud stream may run more slowly than the
 tracking stream. A point ID may occur at most once across add, update, and
 remove in one delta.
 
+The C++ publisher validates the entire delta (up to 200,000 operations) before
+splitting oversized output into payloads of at most 1 MiB. Chunks share the
+original metadata; their combined preflight buffer is limited to 64 MiB to
+bound amplification from repeated session strings. Chunks share the
+original frame ID and timestamp, permitted by the nondecreasing ordering rule.
+They apply removals before updates/additions and never drop operations. This is
+not an atomic multi-message transaction: disconnection during publication ends
+an abnormal, potentially partial session. Consumers must not infer completion
+of a whole map update from an individual chunk.
+
 `session_end` ends the connection's session. No later message is accepted.
 Disconnect without `session_end` is an abnormal but recoverable end: the
 consumer discards partial input and reports the disconnect. Every reconnect

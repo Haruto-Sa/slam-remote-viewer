@@ -8,6 +8,7 @@ endif()
 
 option(SLAM_BUILD_TESTS "Build SLAM adapter contract tests" ON)
 option(SLAM_ENABLE_ORB_SLAM3 "Build the optional ORB-SLAM3 pose adapter" OFF)
+option(SLAM_ENABLE_RTABMAP "Build the optional RTAB-Map RGB-D adapter" OFF)
 set(SLAM_ORB_SLAM3_ROOT "" CACHE PATH "Path to a patched ORB-SLAM3 source tree")
 if(SLAM_BUILD_TESTS)
     enable_testing()
@@ -55,6 +56,26 @@ add_library(slam::boundary_publisher ALIAS slam_boundary_publisher)
 target_link_libraries(
     slam_boundary_publisher PUBLIC slam::pose_model slam::point_cloud_delta_reducer
 )
+
+if(SLAM_ENABLE_RTABMAP)
+    find_package(RTABMap 0.23 REQUIRED COMPONENTS core)
+    add_library(slam_rtabmap_rgbd_adapter src/rtabmap_rgbd_tracker.cpp)
+    target_link_libraries(slam_rtabmap_rgbd_adapter
+        PUBLIC slam::pose_model slam::point_cloud_delta_reducer opencv_core
+        PRIVATE rtabmap::core)
+    add_executable(rtabmap_rgbd_sender tools/rtabmap_rgbd_sender.cpp)
+    target_link_libraries(rtabmap_rgbd_sender PRIVATE slam_rtabmap_rgbd_adapter
+        slam::boundary_publisher opencv_imgcodecs)
+    if(SLAM_BUILD_TESTS)
+        add_executable(rtabmap_rgbd_tests tests/rtabmap_rgbd_tests.cpp)
+        target_link_libraries(rtabmap_rgbd_tests PRIVATE slam_rtabmap_rgbd_adapter)
+        add_test(NAME rtabmap_rgbd_tests COMMAND rtabmap_rgbd_tests)
+        set_tests_properties(rtabmap_rgbd_tests PROPERTIES TIMEOUT 180)
+    endif()
+    if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+        target_compile_options(slam_rtabmap_rgbd_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+endif()
 
 if(SLAM_ENABLE_ORB_SLAM3)
     if(NOT IS_DIRECTORY "${SLAM_ORB_SLAM3_ROOT}")

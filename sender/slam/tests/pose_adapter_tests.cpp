@@ -61,6 +61,29 @@ void TestTranslationIsInverted() {
     CheckNear(pose.position_metres[2], -3.5, "Twc z translation");
 }
 
+void TestCameraToWorldIsNotInverted() {
+    const RigidTransform twc{
+        {{0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0}},
+        {{1.0, -2.0, 3.5}}};
+    const auto pose = slam_remote::slam::ConvertTwcToPose(twc);
+    Check(pose.position_metres == twc.translation_metres, "Twc translation is preserved");
+    CheckNear(pose.orientation_xyzw[2], std::sqrt(0.5), "Twc rotation is not inverted");
+    CheckNear(pose.orientation_xyzw[3], std::sqrt(0.5), "Twc quaternion order is xyzw");
+    for (int invalid = 0; invalid < 3; ++invalid) {
+        auto bad = twc;
+        if (invalid == 0) bad.translation_metres[0] = std::numeric_limits<double>::quiet_NaN();
+        if (invalid == 1) bad.rotation[0] = 2.0;
+        if (invalid == 2) bad.rotation[8] = -1.0;
+        bool rejected = false;
+        try {
+            static_cast<void>(slam_remote::slam::ConvertTwcToPose(bad));
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        Check(rejected, "Twc must reject non-finite, non-rigid and reflected transforms");
+    }
+}
+
 void TestKnownQuarterTurns() {
     constexpr double kHalfSqrtTwo = 0.7071067811865475244;
     const RigidTransform positive_z_tcw{
@@ -149,6 +172,7 @@ int main() {
     try {
         TestIdentity();
         TestTranslationIsInverted();
+        TestCameraToWorldIsNotInverted();
         TestKnownQuarterTurns();
         TestMetadataAndTrackingLoss();
         TestDeterministicFixtureMetadata();

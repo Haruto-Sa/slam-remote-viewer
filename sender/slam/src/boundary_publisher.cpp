@@ -159,6 +159,7 @@ std::string SerializeHello(std::string_view session_id, std::string_view produce
     RequireText(session_id, "session_id");
     RequireText(producer, "producer");
     RequireText(camera.id, "camera.id");
+    RequireText(camera.camera_type, "camera.camera_type");
     if (camera.width == 0 || camera.height == 0 || camera.fps == 0) {
         throw std::invalid_argument("camera dimensions and fps must be positive");
     }
@@ -166,7 +167,7 @@ std::string SerializeHello(std::string_view session_id, std::string_view produce
     output.imbue(std::locale::classic());
     output << "{\"type\":\"hello\",\"boundary_version\":1,\"session_id\":"
            << JsonString(session_id) << ",\"producer\":" << JsonString(producer)
-           << ",\"camera\":{\"camera_type\":\"monocular\",\"id\":"
+           << ",\"camera\":{\"camera_type\":" << JsonString(camera.camera_type) << ",\"id\":"
            << JsonString(camera.id) << ",\"width\":" << camera.width
            << ",\"height\":" << camera.height << ",\"fps\":" << camera.fps
            << "}}";
@@ -245,6 +246,46 @@ std::string SerializePointCloudDelta(std::string_view session_id, std::uint64_t 
     }
     output << "]}";
     return output.str();
+}
+
+std::vector<std::string> SerializePointCloudChunks(
+    std::string_view session_id, std::uint64_t frame_id,
+    camera::ImageFrame::Timestamp timestamp, camera::ImageFrame::Timestamp origin,
+    const slam::PointCloudDelta& delta) {
+    if (delta.operation_count() > 200'000) {
+        throw std::invalid_argument("point-cloud delta exceeds 200000 operations");
+    }
+    // Full validation catches duplicates even across eventual chunk boundaries.
+    auto payload = SerializePointCloudDelta(session_id, frame_id, timestamp, origin, delta);
+    if (payload.size() <= kMaxPayloadBytes) return {std::move(payload)};
+    std::vector<std::string> chunks;
+    std::size_t total_bytes = 0;
+    const auto split = [&](const auto& self, std::size_t begin, std::size_t end) -> void {
+        slam::PointCloudDelta part;
+        for (auto i = begin; i < end; ++i) {
+            if (i < delta.remove.size()) part.remove.push_back(delta.remove[i]);
+            else if (i - delta.remove.size() < delta.update.size())
+                part.update.push_back(delta.update[i - delta.remove.size()]);
+            else part.add.push_back(delta.add[i - delta.remove.size() - delta.update.size()]);
+        }
+        auto encoded = SerializePointCloudDelta(session_id, frame_id, timestamp, origin, part);
+        if (encoded.size() <= kMaxPayloadBytes) {
+            // Repeated large metadata must not amplify a bounded delta into
+            // an unbounded preflight buffer.
+            if (encoded.size() > 64 * kMaxPayloadBytes - total_bytes) {
+                throw std::invalid_argument("point-cloud chunks exceed 64 MiB total");
+            }
+            total_bytes += encoded.size();
+            chunks.push_back(std::move(encoded));
+        } else {
+            if (end - begin <= 1) throw std::invalid_argument("single point-cloud operation exceeds 1 MiB");
+            const auto middle = begin + (end - begin) / 2;
+            self(self, begin, middle);
+            self(self, middle, end);
+        }
+    };
+    split(split, 0, delta.operation_count());
+    return chunks;
 }
 
 std::string SerializeSessionEnd(std::string_view session_id, std::string_view reason) {
@@ -352,14 +393,16 @@ class Publisher::Impl final {
         if (last_pointcloud_timestamp_.has_value() && timestamp < *last_pointcloud_timestamp_) {
             return Fail("point-cloud timestamp regressed");
         }
-        std::string payload;
+        std::vector<std::string> chunks;
         try {
-            payload = SerializePointCloudDelta(config_.session_id, frame_id, timestamp,
+            chunks = SerializePointCloudChunks(config_.session_id, frame_id, timestamp,
                                                config_.timestamp_origin, delta);
         } catch (const std::exception& error) {
             return Fail(error.what());
         }
-        if (!Send(payload)) return false;
+        for (const auto& chunk : chunks) {
+            if (!Send(chunk)) return false;
+        }
         last_pointcloud_frame_ = frame_id;
         last_pointcloud_timestamp_ = timestamp;
         return true;

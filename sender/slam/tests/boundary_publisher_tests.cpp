@@ -61,6 +61,19 @@ void TestSerializationAndValidation() {
           "hello type must be serialized");
     Check(hello.find("\"camera_type\":\"monocular\"") != std::string::npos,
           "monocular camera type must be serialized");
+    CameraInfo rgbd_camera = camera;
+    rgbd_camera.camera_type = "rgbd";
+    Check(slam_remote::boundary::SerializeHello("s", "rtabmap-rgbd", rgbd_camera)
+              .find("\"camera_type\":\"rgbd\"") != std::string::npos,
+          "RGB-D camera metadata must not be mislabeled monocular");
+    rgbd_camera.camera_type.clear();
+    bool empty_type_rejected = false;
+    try {
+        static_cast<void>(slam_remote::boundary::SerializeHello("s", "rtabmap", rgbd_camera));
+    } catch (const std::invalid_argument&) {
+        empty_type_rejected = true;
+    }
+    Check(empty_type_rejected, "empty camera type must be rejected");
 
     const auto origin = std::chrono::seconds(4);
     const TrackingResult tracked{
@@ -143,6 +156,46 @@ void TestSerializationAndValidation() {
     Check(rejected, "invalid UTF-8 must be rejected before writing");
 }
 
+void TestLargePointCloudChunks() {
+    PointCloudDelta delta;
+    for (std::uint64_t id = 0; id < 50'000; ++id) {
+        delta.add.push_back({id, {0.123456789, -12.987654321, 3.141592653589793}});
+    }
+    const auto chunks = slam_remote::boundary::SerializePointCloudChunks(
+        "large-map", 42, std::chrono::seconds(5), std::chrono::seconds(0), delta);
+    Check(chunks.size() > 1, "large delta must split");
+    std::uint64_t expected = 0;
+    for (const auto& chunk : chunks) {
+        Check(chunk.size() <= slam_remote::boundary::kMaxPayloadBytes, "every chunk must fit");
+        Check(chunk.find("\"frame_id\":42") != std::string::npos &&
+              chunk.find("\"timestamp_seconds\":5") != std::string::npos,
+              "chunks must retain original frame metadata");
+        std::size_t at = 0;
+        while ((at = chunk.find("\"id\":", at)) != std::string::npos) {
+            at += 5;
+            Check(std::stoull(chunk.substr(at, 20)) == expected++, "point IDs must not be lost or duplicated");
+        }
+    }
+    Check(expected == delta.add.size(), "all operations must be retained");
+    delta.add.back().id = 0;
+    bool rejected = false;
+    try {
+        static_cast<void>(slam_remote::boundary::SerializePointCloudChunks(
+            "large-map", 42, std::chrono::seconds(5), std::chrono::seconds(0), delta));
+    } catch (const std::invalid_argument&) { rejected = true; }
+    Check(rejected, "duplicate IDs across chunk boundaries must be rejected");
+    delta.add.resize(1000);
+    rejected = false;
+    try {
+        static_cast<void>(slam_remote::boundary::SerializePointCloudChunks(
+            std::string(slam_remote::boundary::kMaxPayloadBytes - 512, 's'), 42,
+            std::chrono::seconds(5), std::chrono::seconds(0), delta));
+    } catch (const std::invalid_argument& error) {
+        rejected = std::string(error.what()).find("64 MiB") != std::string::npos;
+    }
+    Check(rejected, "repeated metadata must not create an excessive chunk buffer");
+}
+
 void TestCompleteSocketSession() {
     const std::string path = "/private/tmp/slam-boundary-test-" +
                              std::to_string(static_cast<long long>(getpid())) + ".sock";
@@ -216,6 +269,7 @@ void TestMissingConsumerDoesNotQueue() {
 
 int main() {
     try {
+        TestLargePointCloudChunks();
         TestSerializationAndValidation();
         TestCompleteSocketSession();
         TestMissingConsumerDoesNotQueue();
