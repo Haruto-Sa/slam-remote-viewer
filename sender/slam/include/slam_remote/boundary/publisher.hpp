@@ -43,6 +43,13 @@ std::string SerializePointCloudDelta(std::string_view session_id, std::uint64_t 
                                      camera::ImageFrame::Timestamp timestamp_origin,
                                      const slam::PointCloudDelta& delta);
 std::string SerializeSessionEnd(std::string_view session_id, std::string_view reason);
+/// Validate the complete delta before splitting; each payload is <= 1 MiB.
+/// Chunks preserve frame/time and apply removes before updates/additions.
+/// Transport failure midway still ends an abnormal, possibly partial session.
+std::vector<std::string> SerializePointCloudChunks(
+    std::string_view session_id, std::uint64_t frame_id,
+    camera::ImageFrame::Timestamp timestamp, camera::ImageFrame::Timestamp origin,
+    const slam::PointCloudDelta& delta);
 std::vector<std::uint8_t> FramePayload(std::string_view payload);
 
 /// One synchronous, bounded-buffer connection to the Rust-owned Unix listener.

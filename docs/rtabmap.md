@@ -1,7 +1,7 @@
 # RTAB-Map RGB-D backend (work in progress)
 
 Tracked in [#108](https://github.com/Haruto-Sa/slam-remote-viewer/issues/108).
-This backend is not yet release-ready. Real dataset and end-to-end viewer
+This backend is not yet release-ready. Pose-accuracy and end-to-end viewer
 verification, live camera capture, installation automation and independent
 review remain outstanding. The default ORB-SLAM3 workflow is unchanged.
 
@@ -48,7 +48,12 @@ does not describe an entire dependency environment.
   Updated optimized node poses move these observations using ordinary deltas;
   missing observations generate removals through the existing reducer.
 - Point export fails above 100,000 observations instead of silently truncating
-  the map. The existing 1 MiB boundary-message limit also applies. Export is
+  the map. Large deltas are split into messages of at most 1 MiB, preserving
+  frame/time and all operations. The full delta is validated before sending
+  any chunk; more than 200,000 operations or 64 MiB of serialized chunks are
+  rejected. A connection failure
+  midway is still an abnormal, potentially partial session, not an atomic
+  transaction. Export is
   approximately once per second of input frames, plus a final export at EOF.
 
 ## Optional build and dataset entry point
@@ -64,6 +69,7 @@ ctest --test-dir build/rtabmap --output-on-failure
 ```
 
 For the Apple Silicon conda development environment, also set
+`-DCMAKE_OSX_ARCHITECTURES=arm64`,
 `-DCMAKE_EXE_LINKER_FLAGS=-L/path/to/dependencies/lib` and
 `-DCMAKE_BUILD_RPATH=/path/to/dependencies/lib`. Without the latter, the linker
 can succeed while executables fail to locate OpenCV or conda's C++ runtime.
@@ -87,3 +93,31 @@ producers. Use a distinct socket, network endpoint and session per camera.
 The camera metadata advertises `rgbd`; existing producers still default to
 `monocular`. On input/backend/network failure the producer exits nonzero and
 closes the connection without falsely reporting successful session completion.
+
+## Real dataset boundary verification
+
+```sh
+cargo build --manifest-path sender/streamer/Cargo.toml --bin slam_boundary_dump
+python3 tools/test-rtabmap-dataset.py /path/to/rgbd_dataset_freiburg1_xyz \
+  --producer build/rtabmap/rtabmap_rgbd_sender \
+  --validator sender/streamer/target/debug/slam_boundary_dump
+python3 -m unittest discover -s tools -p test_rtabmap_dataset_test.py
+```
+
+The harness pairs RGB/depth frames within 20 ms without reusing depth frames,
+then runs the actual producer against Rust's production boundary validator.
+It retains logs and the association file in a reported temporary directory.
+It requires clean completion, at least 90% tracked poses, and nonempty map
+output. For TUM's pre-registered images it uses the recommended ROS default
+pinhole intrinsics and depth factor 5000, without independently undistorting
+the RGB image; see the [TUM format documentation](https://cvg.cit.tum.de/data/datasets/rgbd-dataset/file_formats).
+This approximation is specific to that dataset workflow, not a replacement for
+calibrating a physical RGB-D camera.
+
+The full `freiburg1_xyz` run on the development host completed with 794 paired
+frames, 794 tracked poses, 111 point-cloud messages and 837,941 point operations,
+with 65,982 observations in the final exported map.
+The initial unsplit implementation failed on this same sequence at the 1 MiB
+limit; the full run passed after bounded chunking. All 13 native tests and 3
+association tests passed. This proves real-backend/boundary operation, not
+trajectory accuracy, successful loop closure, or Unity rendering.
